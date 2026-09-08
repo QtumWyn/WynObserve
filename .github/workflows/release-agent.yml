@@ -1,0 +1,68 @@
+name: Release Agent
+
+on:
+  push:
+    tags:
+      - "agent-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build WynObserve Agent
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm
+
+      - name: Update Rust
+        run: |
+          rustup update stable
+          rustup default stable
+
+      - name: Install cargo-deb
+        run: |
+          cargo install cargo-deb --locked
+
+      - name: Test workspace
+        run: cargo test --workspace --locked
+
+      - name: Build Agent package
+        run: cargo deb --package wyncommand-agent
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          PACKAGE="$(find target -name 'wyncommand-agent*.deb' -print -quit)"
+
+          if [[ -z "$PACKAGE" ]]; then
+            echo "ERROR // Debian package not found"
+            exit 1
+          fi
+
+          PACKAGE_DIR="$(dirname "$PACKAGE")"
+
+          cd "$PACKAGE_DIR"
+          sha256sum "$(basename "$PACKAGE")" > SHA256SUMS
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          PACKAGE="$(find target -name 'wyncommand-agent*.deb' -print -quit)"
+          PACKAGE_DIR="$(dirname "$PACKAGE")"
+
+          gh release create \
+            "${GITHUB_REF_NAME}" \
+            "$PACKAGE" \
+            "$PACKAGE_DIR/SHA256SUMS" \
+            --title "WynObserve Agent ${GITHUB_REF_NAME}" \
+            --generate-notes
