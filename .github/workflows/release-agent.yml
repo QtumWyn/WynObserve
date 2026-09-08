@@ -34,6 +34,42 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace --locked
 
+      - name: Verify Agent tag matches package version
+        shell: bash
+        run: |
+          PACKAGE_VERSION="$(
+            cargo metadata \
+              --no-deps \
+              --format-version 1 \
+            | python3 -c '
+          import json
+          import sys
+          
+          metadata = json.load(sys.stdin)
+          
+          package = next(
+              package
+              for package in metadata["packages"]
+              if package["name"] == "wyncommand-agent"
+          )
+          
+          print(package["version"])
+          '
+          )"
+          
+          TAG_VERSION="${GITHUB_REF_NAME#agent-v}"
+          
+          echo "Agent package version: ${PACKAGE_VERSION}"
+          echo "Release tag version:   ${TAG_VERSION}"
+          
+          if [[ "${PACKAGE_VERSION}" != "${TAG_VERSION}" ]]; then
+              echo
+              echo "ERROR // Agent tag does not match Agent/Cargo.toml version."
+              echo "Package: ${PACKAGE_VERSION}"
+              echo "Tag:     ${TAG_VERSION}"
+              exit 1
+          fi
+
       - name: Build Agent package
         run: cargo deb --package wyncommand-agent
 
