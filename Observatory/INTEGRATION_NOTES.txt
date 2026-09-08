@@ -1,0 +1,8 @@
+WynCommand Observatory UI prototype
+====================================
+
+This project is intentionally standalone. It uses MockTelemetry today.
+The backend boundary is the TelemetrySource trait in src/model.rs.
+
+When the real M6 backend is ready, implement that trait and swap the source
+constructed in ObservatoryApp::new(). The UI can remain otherwise dormant.

@@ -1,0 +1,8 @@
+environment = "development"
+
+[hub]
+endpoint = "itpc.tailc3aa57.ts.net:5769"
+
+[local]
+enabled = true
+endpoint = "127.0.0.1:4767"

@@ -1,0 +1,7 @@
+environment = "production"
+
+[agent]
+listen_address = "100.81.234.122:4768"
+
+[observatory]
+listen_address = "100.81.234.122:4769"

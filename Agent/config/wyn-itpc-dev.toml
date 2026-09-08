@@ -1,0 +1,10 @@
+machine_id = "wyn-itpc"
+machine_name = "Wyn-ITPC"
+role = "workstation"
+
+[hub]
+endpoint = "127.0.0.1:5768"
+
+[local]
+observatory_enabled = true
+listen_address = "127.0.0.1:4767"

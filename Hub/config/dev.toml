@@ -1,0 +1,7 @@
+environment = "development"
+
+[agent]
+listen_address = "127.0.0.1:5768"
+
+[observatory]
+listen_address = "127.0.0.1:5769"

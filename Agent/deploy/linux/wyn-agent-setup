@@ -1,0 +1,291 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CONFIG_DIR="/etc/wyncommand"
+CONFIG_FILE="$CONFIG_DIR/agent-prod.toml"
+
+SERVICE="wyn-agent.service"
+
+DEFAULT_HUB="itpc.tailc3aa57.ts.net:4768"
+DEFAULT_ROLE="workstation"
+
+if [[ "${EUID}" -ne 0 ]]; then
+    exec sudo -- "$0" "$@"
+fi
+
+echo
+echo "WynCommand // Agent Setup :3"
+echo
+
+#
+# Migrate the hand-written service used before
+# WynCommand became a real Debian package.
+#
+LEGACY_UNIT="/etc/systemd/system/wyn-agent.service"
+
+if [[ -f "$LEGACY_UNIT" ]] &&
+   grep -q "/opt/wyncommand/bin/wyn-agent" "$LEGACY_UNIT"
+then
+    echo "Legacy WynCommand installation detected."
+
+    systemctl disable --now \
+        "$SERVICE" \
+        >/dev/null 2>&1 || true
+
+    BACKUP="${LEGACY_UNIT}.legacy.$(date +%s)"
+
+    mv \
+        "$LEGACY_UNIT" \
+        "$BACKUP"
+
+    echo "Legacy service backed up:"
+    echo "  $BACKUP"
+    echo
+
+    systemctl daemon-reload
+fi
+
+
+#
+# Don't accidentally destroy an existing machine identity.
+#
+if [[ -f "$CONFIG_FILE" ]]; then
+    echo "Existing WynCommand configuration detected:"
+    echo
+    cat "$CONFIG_FILE"
+    echo
+
+    read -r -p \
+        "Replace this configuration? [y/N]: " \
+        REPLACE_CONFIG
+
+    case "${REPLACE_CONFIG,,}" in
+        y|yes)
+            ;;
+        *)
+            echo
+            echo "Keeping existing configuration."
+            echo
+
+            systemctl daemon-reload
+            systemctl enable --now "$SERVICE"
+
+            exit 0
+            ;;
+    esac
+fi
+
+
+#
+# Defaults
+#
+DEFAULT_NAME="$(
+    hostnamectl --static \
+        2>/dev/null \
+        || hostname
+)"
+
+DEFAULT_ID="$(
+    printf '%s' "$DEFAULT_NAME" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E \
+            's/[^a-z0-9]+/-/g;
+             s/^-+//;
+             s/-+$//'
+)"
+
+echo "Machine identity"
+echo "----------------"
+echo
+
+read -r -p \
+    "Machine name [$DEFAULT_NAME]: " \
+    MACHINE_NAME
+
+MACHINE_NAME="${MACHINE_NAME:-$DEFAULT_NAME}"
+
+read -r -p \
+    "Machine ID [$DEFAULT_ID]: " \
+    MACHINE_ID
+
+MACHINE_ID="${MACHINE_ID:-$DEFAULT_ID}"
+
+read -r -p \
+    "Machine role [$DEFAULT_ROLE]: " \
+    MACHINE_ROLE
+
+MACHINE_ROLE="${MACHINE_ROLE:-$DEFAULT_ROLE}"
+
+echo
+echo "Fleet"
+echo "-----"
+echo
+
+read -r -p \
+    "Hub [$DEFAULT_HUB]: " \
+    HUB_ENDPOINT
+
+HUB_ENDPOINT="${HUB_ENDPOINT:-$DEFAULT_HUB}"
+
+
+#
+# Validate machine ID.
+#
+if [[ ! "$MACHINE_ID" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    echo
+    echo "ERROR // Machine ID must contain only:"
+    echo "        lowercase letters"
+    echo "        numbers"
+    echo "        hyphens"
+    exit 1
+fi
+
+
+#
+# Escape user-supplied TOML strings.
+#
+toml_escape() {
+    local value="$1"
+
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+
+    printf '%s' "$value"
+}
+
+MACHINE_NAME_TOML="$(
+    toml_escape "$MACHINE_NAME"
+)"
+
+MACHINE_ROLE_TOML="$(
+    toml_escape "$MACHINE_ROLE"
+)"
+
+HUB_ENDPOINT_TOML="$(
+    toml_escape "$HUB_ENDPOINT"
+)"
+
+
+#
+# Show what we're about to create.
+#
+echo
+echo "WynCommand configuration"
+echo "------------------------"
+echo
+echo "Machine // $MACHINE_NAME"
+echo "ID      // $MACHINE_ID"
+echo "Role    // $MACHINE_ROLE"
+echo "Hub     // $HUB_ENDPOINT"
+echo
+
+
+#
+# Tailscale sanity check.
+#
+if command -v tailscale >/dev/null 2>&1; then
+    if tailscale status >/dev/null 2>&1; then
+        echo "Tailscale // connected"
+    else
+        echo "Tailscale // installed, currently offline"
+    fi
+else
+    echo "WARNING // Tailscale not detected."
+    echo "The Agent will retry the Hub until networking is available."
+fi
+
+echo
+
+
+#
+# Write machine config.
+#
+install -d \
+    -m 0755 \
+    "$CONFIG_DIR"
+
+cat > "$CONFIG_FILE" <<EOF
+machine_id = "$MACHINE_ID"
+machine_name = "$MACHINE_NAME_TOML"
+role = "$MACHINE_ROLE_TOML"
+
+[hub]
+endpoint = "$HUB_ENDPOINT_TOML"
+
+[local]
+observatory_enabled = false
+listen_address = "127.0.0.1:4767"
+EOF
+
+chmod 0644 "$CONFIG_FILE"
+
+
+#
+# Activate service.
+#
+systemctl daemon-reload
+systemctl enable --now "$SERVICE"
+
+echo
+echo "Checking Agent..."
+echo
+
+sleep 2
+
+if ! systemctl is-active \
+    --quiet \
+    "$SERVICE"
+then
+    echo "ERROR // WynCommand Agent failed to start."
+    echo
+
+    journalctl \
+        -u "$SERVICE" \
+        -n 30 \
+        --no-pager
+
+    exit 1
+fi
+
+
+#
+# Give it a few seconds to establish its first
+# Hub connection.
+#
+CONNECTED=false
+
+for _ in {1..10}; do
+    if journalctl \
+        -u "$SERVICE" \
+        --since "30 seconds ago" \
+        --no-pager \
+        | grep -Fq \
+            "Agent // connected to Hub"
+    then
+        CONNECTED=true
+        break
+    fi
+
+    sleep 1
+done
+
+
+echo
+
+if [[ "$CONNECTED" == true ]]; then
+    echo "WynCommand Agent // ONLINE :3"
+    echo
+    echo "Machine // $MACHINE_NAME"
+    echo "Hub     // $HUB_ENDPOINT"
+else
+    echo "WynCommand Agent // RUNNING"
+    echo
+    echo "The service is healthy, but a Hub connection"
+    echo "has not been confirmed yet."
+    echo
+    echo "Check:"
+    echo "  journalctl -u wyn-agent -f"
+fi
+
+echo

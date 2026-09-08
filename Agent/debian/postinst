@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -e
+
+#DEBHELPER#
+
+if [ "$1" = "configure" ]; then
+    echo
+    echo "WynCommand Agent installed."
+    echo
+    echo "First-time setup:"
+    echo
+    echo "    sudo wyn-agent-setup"
+    echo
+fi

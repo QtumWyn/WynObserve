@@ -1,0 +1,8 @@
+environment = "production"
+
+[hub]
+endpoint = "itpc.tailc3aa57.ts.net:4769"
+
+[local]
+enabled = false
+endpoint = "127.0.0.1:4767"
