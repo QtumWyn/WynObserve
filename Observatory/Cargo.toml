@@ -28,6 +28,7 @@ semver = "1"
 
 [package.metadata.deb]
 name = "wynobserve"
+maintainer = "QtumWyn <Qtummechanic25@gmail.com>"
 section = "utils"
 priority = "optional"
 depends = "$auto, pkexec"

@@ -375,7 +375,7 @@ impl ObservatoryApp {
                             .color(theme::blue()),
                         );
 
-                        if ui.button("⚙ CUSTOMIZE").clicked() {
+                        if ui.button("⚙ SETTINGS").clicked() {
                             self.settings_open = true;
                         }
 
@@ -702,7 +702,7 @@ impl ObservatoryApp {
         let mut changed = false;
         let mut save_clicked = false;
 
-        egui::Window::new("OBSERVATORY // CUSTOMIZE")
+        egui::Window::new("WYNOBSERVE // SETTINGS")
             .open(&mut open)
             .default_width(560.0)
             .resizable(true)
@@ -944,24 +944,22 @@ impl ObservatoryApp {
                         self.preferences = UiPreferences::default();
                         changed = true;
                     }
-
-                    ui.with_layout(
-                        egui::Layout::right_to_left(
-                            egui::Align::Center,
-                        ),
-                        |ui| {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "config: {}",
-                                    config::config_path().display()
-                                ))
-                                    .monospace()
-                                    .size(9.5)
-                                    .color(theme::muted()),
-                            );
-                        },
-                    );
                 });
+
+                ui.add_space(5.0);
+
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!(
+                            "config: {}",
+                            config::config_path().display()
+                        ))
+                            .monospace()
+                            .size(9.5)
+                            .color(theme::muted()),
+                    )
+                        .wrap(),
+                );
 
                 if let Some(status) = &self.settings_status {
                     ui.label(
