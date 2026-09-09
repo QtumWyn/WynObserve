@@ -567,44 +567,7 @@ impl AnalysisSnapshot {
             },
         ];
 
-        let fleet = vec![
-            FleetMachine {
-                name: "Wyn-ITPC".into(),
-                role: "workstation".into(),
-                online: true,
-                cpu_percent: system.cpu.package_usage,
-                memory_percent: mem_pct,
-                network_mib_s: system.network.rx_mib_s + system.network.tx_mib_s,
-                note: "local agent".into(),
-            },
-            FleetMachine {
-                name: "Eevee-PC".into(),
-                role: "workstation".into(),
-                online: true,
-                cpu_percent: 22.6 + (t * 0.33).sin() * 8.0,
-                memory_percent: 48.2,
-                network_mib_s: 8.4,
-                note: "remote mock agent".into(),
-            },
-            FleetMachine {
-                name: "APlus-Server".into(),
-                role: "physical server".into(),
-                online: true,
-                cpu_percent: 39.1 + (t * 0.25).sin() * 12.0,
-                memory_percent: 61.8,
-                network_mib_s: 87.4,
-                note: "server mock agent".into(),
-            },
-            FleetMachine {
-                name: "Wyn-Laptop".into(),
-                role: "mobile".into(),
-                online: false,
-                cpu_percent: 0.0,
-                memory_percent: 0.0,
-                network_mib_s: 0.0,
-                note: "offline".into(),
-            },
-        ];
+        let fleet = Vec::new();
 
         let server = ServerSnapshot {
             hostname: "aplus-physical-01".into(),

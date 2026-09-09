@@ -203,8 +203,7 @@ pub struct ObservatoryApp {
 impl ObservatoryApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
-        runtime_config:
-        crate::runtime_config::ObservatoryConfig,
+        runtime_config: crate::runtime_config::ObservatoryConfig,
     ) -> Self {
         let preferences = UiPreferences::load();
 
@@ -212,30 +211,21 @@ impl ObservatoryApp {
         cc.egui_ctx
             .send_viewport_cmd(egui::ViewportCommand::Title(preferences.title.clone()));
 
-        let mut source: Box<dyn TelemetrySource> =
-            Box::new(LiveTelemetry::connect(
-                runtime_config
-                    .local
-                    .endpoint
-                    .clone()
-            ));
+        let mut source: Box<dyn TelemetrySource> = Box::new(LiveTelemetry::connect(
+            runtime_config.local.endpoint.clone(),
+        ));
 
         let local_snapshot = source.poll(0.0);
-        let fleet = FleetState::mock(&local_snapshot, 0.0);
+        let fleet = FleetState::default();
 
-        let selected_machine_id = "wyn-itpc".to_string();
+        let selected_machine_id = String::new();
 
         let snapshot = fleet
             .machine(&selected_machine_id)
             .map(|machine| machine.system.clone())
             .unwrap_or_else(|| local_snapshot.clone());
 
-        let hub = HubFleetClient::connect(
-            runtime_config
-                .hub
-                .endpoint
-                .clone()
-        );
+        let hub = HubFleetClient::connect(runtime_config.hub.endpoint.clone());
 
         Self {
             source,
@@ -253,7 +243,7 @@ impl ObservatoryApp {
             selected_instruction: None,
             descend: false,
 
-            comparison_machine_id: "aplus-server".to_string(),
+            comparison_machine_id: String::new(),
             captured_incidents: 0,
 
             preferences,
@@ -1071,8 +1061,7 @@ impl eframe::App for ObservatoryApp {
 
             let live_fleet = self.hub.poll();
 
-            self.fleet
-                .refresh_hybrid(&self.local_snapshot, elapsed, &live_fleet);
+            self.fleet = live_fleet;
 
             self.sync_selected_snapshot();
 

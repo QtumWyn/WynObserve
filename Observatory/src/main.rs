@@ -8,19 +8,16 @@ mod live;
 mod mock;
 mod model;
 mod normalize;
+mod runtime_config;
 mod theme;
 mod ui;
-mod runtime_config;
 
 use app::ObservatoryApp;
 use eframe::egui;
 
 fn main() -> eframe::Result {
-    let config =
-        runtime_config::ObservatoryConfig::load()
-            .expect(
-                "failed to load Observatory configuration"
-            );
+    let config = runtime_config::ObservatoryConfig::load()
+        .expect("failed to load Observatory configuration");
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -33,15 +30,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "WynCommand Observatory",
         native_options,
-        Box::new(move |cc| {
-            Ok(
-                Box::new(
-                    ObservatoryApp::new(
-                        cc,
-                        config.clone(),
-                    )
-                )
-            )
-        }),
+        Box::new(move |cc| Ok(Box::new(ObservatoryApp::new(cc, config.clone())))),
     )
 }

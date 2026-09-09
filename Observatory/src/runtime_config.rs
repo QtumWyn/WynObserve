@@ -1,11 +1,6 @@
 use std::{
-    env,
-    fs,
-    io,
-    path::{
-        Path,
-        PathBuf,
-    },
+    env, fs, io,
+    path::{Path, PathBuf},
 };
 
 use serde::Deserialize;
@@ -39,40 +34,25 @@ impl Default for LocalTelemetryConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            endpoint:
-            default_local_endpoint(),
+            endpoint: default_local_endpoint(),
         }
     }
 }
 
 impl ObservatoryConfig {
     pub fn load() -> io::Result<Self> {
-        let path =
-            config_path_from_args();
+        let path = config_path_from_args();
 
-        println!(
-            "Observatory // config {}",
-            path.display()
-        );
+        println!("Observatory // config {}", path.display());
 
-        let contents =
-            fs::read_to_string(
-                &path
-            )?;
+        let contents = fs::read_to_string(&path)?;
 
-        let config: Self =
-            toml::from_str(
-                &contents
+        let config: Self = toml::from_str(&contents).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid Observatory config {}: {error}", path.display()),
             )
-                .map_err(|error| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!(
-                            "invalid Observatory config {}: {error}",
-                            path.display()
-                        ),
-                    )
-                })?;
+        })?;
 
         config.validate()?;
 
@@ -80,16 +60,10 @@ impl ObservatoryConfig {
     }
 
     fn validate(&self) -> io::Result<()> {
-        require_value(
-            "hub.endpoint",
-            &self.hub.endpoint,
-        )?;
+        require_value("hub.endpoint", &self.hub.endpoint)?;
 
         if self.local.enabled {
-            require_value(
-                "local.endpoint",
-                &self.local.endpoint,
-            )?;
+            require_value("local.endpoint", &self.local.endpoint)?;
         }
 
         Ok(())
@@ -104,54 +78,31 @@ fn default_local_endpoint() -> String {
     "127.0.0.1:4767".to_string()
 }
 
-fn require_value(
-    field: &str,
-    value: &str,
-) -> io::Result<()> {
+fn require_value(field: &str, value: &str) -> io::Result<()> {
     if value.trim().is_empty() {
-        return Err(
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Observatory config field `{field}` cannot be empty"
-                ),
-            )
-        );
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Observatory config field `{field}` cannot be empty"),
+        ));
     }
 
     Ok(())
 }
 
 fn config_path_from_args() -> PathBuf {
-    let mut args =
-        env::args().skip(1);
+    let mut args = env::args().skip(1);
 
-    while let Some(argument) =
-        args.next()
-    {
+    while let Some(argument) = args.next() {
         if argument == "--config" {
-            if let Some(path) =
-                args.next()
-            {
-                return PathBuf::from(
-                    path
-                );
+            if let Some(path) = args.next() {
+                return PathBuf::from(path);
             }
         }
     }
 
-    if let Some(path) =
-        env::var_os(
-            "WYNCOMMAND_OBSERVATORY_CONFIG"
-        )
-    {
-        return PathBuf::from(
-            path
-        );
+    if let Some(path) = env::var_os("WYNCOMMAND_OBSERVATORY_CONFIG") {
+        return PathBuf::from(path);
     }
 
-    Path::new(
-        "wyncommand-observatory.toml"
-    )
-        .to_path_buf()
+    Path::new("wyncommand-observatory.toml").to_path_buf()
 }
