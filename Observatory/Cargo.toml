@@ -1,6 +1,6 @@
 [package]
 name = "wyn-observatory-ui"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Desktop fleet observability interface for WynObserve"
 
@@ -14,12 +14,23 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml = "1.1.5"
 wyn-protocol = { workspace = true }
+reqwest = {
+    version = "0.13",
+    default-features = false,
+    features = [
+        "blocking",
+        "json",
+        "rustls",
+    ]
+}
+
+semver = "1"
 
 [package.metadata.deb]
 name = "wynobserve"
 section = "utils"
 priority = "optional"
-depends = "$auto"
+depends = "$auto, pkexec"
 
 assets = [
     [

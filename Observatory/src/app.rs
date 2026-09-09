@@ -9,6 +9,7 @@ use crate::{
     live::LiveTelemetry,
     model::{ComponentId, SystemSnapshot, TelemetrySource},
     theme, ui,
+    updater::{UpdateState, Updater},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,6 +199,7 @@ pub struct ObservatoryApp {
     settings_open: bool,
     settings_dirty: bool,
     settings_status: Option<String>,
+    updater: Updater,
 }
 
 impl ObservatoryApp {
@@ -226,6 +228,9 @@ impl ObservatoryApp {
             .unwrap_or_else(|| local_snapshot.clone());
 
         let hub = HubFleetClient::connect(runtime_config.hub.endpoint.clone());
+        let updater = Updater::default();
+
+        updater.check();
 
         Self {
             source,
@@ -250,6 +255,8 @@ impl ObservatoryApp {
             settings_open: false,
             settings_dirty: false,
             settings_status: None,
+
+            updater,
         }
     }
 
@@ -575,6 +582,116 @@ impl ObservatoryApp {
         }
     }
 
+    fn updater_section(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.separator();
+        ui.add_space(10.0);
+
+        ui.label(
+            egui::RichText::new("UPDATES")
+                .monospace()
+                .strong()
+                .color(theme::pink()),
+        );
+
+        ui.label(format!("Installed version: {}", env!("CARGO_PKG_VERSION")));
+
+        ui.add_space(6.0);
+
+        match self.updater.state() {
+            UpdateState::Idle => {
+                if ui.button("CHECK FOR UPDATES").clicked() {
+                    self.updater.check();
+                }
+            }
+
+            UpdateState::Checking => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Checking for updates...");
+                });
+            }
+
+            UpdateState::Current => {
+                ui.label(egui::RichText::new("✓ WynObserve is up to date").color(theme::green()));
+
+                if ui.button("CHECK AGAIN").clicked() {
+                    self.updater.check();
+                }
+            }
+
+            UpdateState::Available(update) => {
+                ui.label(
+                    egui::RichText::new(format!("Update available: {}", update.version))
+                        .strong()
+                        .color(theme::blue()),
+                );
+
+                ui.label(
+                    egui::RichText::new(format!("Release: {}", update.tag))
+                        .monospace()
+                        .size(10.0)
+                        .color(theme::muted()),
+                );
+
+                if ui.button("UPDATE NOW").clicked() {
+                    self.updater.install(update);
+                }
+            }
+
+            UpdateState::Downloading => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Downloading update...");
+                });
+            }
+
+            UpdateState::Installing => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Installing update...");
+                });
+
+                ui.label(
+                    egui::RichText::new("KDE may ask for your administrator password.")
+                        .size(10.0)
+                        .color(theme::muted()),
+                );
+            }
+
+            UpdateState::Installed(version) => {
+                ui.label(
+                    egui::RichText::new(format!("✓ WynObserve {} installed", version))
+                        .strong()
+                        .color(theme::green()),
+                );
+
+                ui.label("Restart WynObserve to use the new version.");
+
+                if ui.button("RESTART NOW").clicked() {
+                    match crate::updater::restart_installed() {
+                        Ok(()) => {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+
+                        Err(error) => {
+                            eprintln!("WynObserve // restart failed: {error}");
+                        }
+                    }
+                }
+            }
+
+            UpdateState::Error(error) => {
+                ui.label(
+                    egui::RichText::new(format!("Update failed: {error}")).color(theme::pink()),
+                );
+
+                if ui.button("TRY AGAIN").clicked() {
+                    self.updater.check();
+                }
+            }
+        }
+    }
+
     fn settings_window(&mut self, ctx: &egui::Context) {
         if !self.settings_open {
             return;
@@ -853,6 +970,13 @@ impl ObservatoryApp {
                             .color(theme::muted()),
                     );
                 }
+
+                ui.add_space(12.0);
+
+                self.updater_section(
+                    ui,
+                    ctx,
+                );
             });
 
         if changed {
@@ -1055,8 +1179,6 @@ fn nav_group(ui: &mut egui::Ui, current: &mut View, label: &str, views: &[View])
 impl eframe::App for ObservatoryApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if !self.paused {
-            let elapsed = self.elapsed() as f32;
-
             self.local_snapshot = self.source.poll(self.elapsed());
 
             let live_fleet = self.hub.poll();

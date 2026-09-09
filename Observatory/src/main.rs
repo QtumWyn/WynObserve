@@ -11,6 +11,7 @@ mod normalize;
 mod runtime_config;
 mod theme;
 mod ui;
+mod updater;
 
 use app::ObservatoryApp;
 use eframe::egui;
