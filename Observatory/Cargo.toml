@@ -2,6 +2,11 @@
 name = "wyn-observatory-ui"
 version = "0.1.0"
 edition = "2024"
+description = "Desktop fleet observability interface for WynObserve"
+
+[[bin]]
+name = "wynobserve"
+path = "src/main.rs"
 
 [dependencies]
 eframe = "0.36.1"
@@ -9,3 +14,27 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml = "1.1.5"
 wyn-protocol = { workspace = true }
+
+[package.metadata.deb]
+name = "wynobserve"
+section = "utils"
+priority = "optional"
+depends = "$auto"
+
+assets = [
+    [
+        "target/release/wynobserve",
+        "usr/bin/wynobserve",
+        "755"
+    ],
+    [
+        "debian/wynobserve.desktop",
+        "usr/share/applications/wynobserve.desktop",
+        "644"
+    ],
+    [
+        "config/prod.toml",
+        "etc/wyncommand/observatory-prod.toml",
+        "644"
+    ],
+]
