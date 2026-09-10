@@ -7,8 +7,9 @@ mod server;
 
 pub use critters::draw_familiars;
 pub use deep_views::{
-    autopsy_view, binary_view, cache_view, causality_view, flamegraph_view, fleet_view, irq_view,
-    memory_map_view, packet_flow_view, replay_view, scheduler_view, syscalls_view,
+    MemoryRegionFilter, autopsy_view, binary_view, cache_view, causality_view, flamegraph_view,
+    fleet_view, irq_view, memory_map_view, packet_flow_view, replay_view, scheduler_view,
+    syscalls_view,
 };
 pub use extreme_views::{
     anomalies_view, compare_view, containers_view, cross_machine_view, database_view, diff_view,
@@ -16,8 +17,8 @@ pub use extreme_views::{
     source_silicon_view, storage_io_view, traces_view,
 };
 pub use panels::{
-    cpu_view, gpu_view, kernel_view, logs_view, memory_view, network_view, npu_memory_view,
-    npu_runtime_view, npu_view, processes_view,
+    ProcessTab, cpu_view, gpu_view, kernel_view, logs_view, memory_view, network_view,
+    npu_memory_view, npu_runtime_view, npu_view, processes_view,
 };
 pub use server::server_view;
 

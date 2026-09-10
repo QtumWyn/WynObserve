@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{PROTOCOL_VERSION, TelemetrySnapshot};
+use crate::process_memory::ProcessMemoryMap;
+use crate::{InstructionVeinBatch, PROTOCOL_VERSION, TelemetrySnapshot};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MachineIdentity {
@@ -18,6 +19,90 @@ pub struct MachineIdentity {
 
 fn default_machine_role() -> String {
     "workstation".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCommand {
+    pub protocol_version: u16,
+    pub request_id: u64,
+    pub command: AgentCommandKind,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "command", rename_all = "snake_case")]
+pub enum AgentCommandKind {
+    ProcessMemoryMap {
+        pid: u32,
+        expected_started_at_unix_ms: Option<u64>,
+    },
+
+    InstructionVeinSample {
+        pid: u32,
+        expected_started_at_unix_ms: Option<u64>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentResponse {
+    pub protocol_version: u16,
+    pub request_id: u64,
+    pub result: AgentResponseKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "result", rename_all = "snake_case")]
+pub enum AgentResponseKind {
+    ProcessMemoryMap { map: ProcessMemoryMap },
+
+    InstructionVein { batch: InstructionVeinBatch },
+
+    Error { code: String, message: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObservatoryRequest {
+    pub protocol_version: u16,
+
+    pub request_id: u64,
+
+    pub request: ObservatoryRequestKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "request", rename_all = "snake_case")]
+pub enum ObservatoryRequestKind {
+    ProcessMemoryMap {
+        machine_id: String,
+
+        pid: u32,
+
+        expected_started_at_unix_ms: Option<u64>,
+    },
+
+    InstructionVeinSample {
+        machine_id: String,
+        pid: u32,
+        expected_started_at_unix_ms: Option<u64>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "result", rename_all = "snake_case")]
+pub enum ObservatoryResponseKind {
+    ProcessMemoryMap {
+        machine_id: String,
+        map: ProcessMemoryMap,
+    },
+
+    InstructionVein {
+        machine_id: String,
+        batch: InstructionVeinBatch,
+    },
+
+    Error {
+        code: String,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,8 +132,11 @@ pub enum AgentMessage {
     Snapshot {
         machine_id: String,
         sequence: u64,
-
         snapshot: TelemetrySnapshot,
+    },
+
+    Response {
+        response: AgentResponse,
     },
 }
 
@@ -86,6 +174,11 @@ pub enum HubMessage {
         generated_at_unix_ms: u64,
 
         machines: Vec<FleetMachineState>,
+    },
+    Response {
+        protocol_version: u16,
+        request_id: u64,
+        response: ObservatoryResponseKind,
     },
 }
 

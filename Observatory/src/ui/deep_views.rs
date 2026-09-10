@@ -7,6 +7,10 @@ use crate::{
     theme,
 };
 
+use wyn_protocol::process_memory::{
+    ProcessMemoryMap, ProcessMemoryPermissions, ProcessMemoryRegion, ProcessMemoryRegionKind,
+};
+
 fn page_heading(ui: &mut egui::Ui, title: &str, subtitle: &str) {
     ui.label(
         egui::RichText::new(title)
@@ -27,6 +31,283 @@ fn truth(ui: &mut egui::Ui, level: TruthLevel) {
             .size(10.0)
             .color(theme::truth_color(level)),
     );
+}
+
+fn memory_kind_label(kind: ProcessMemoryRegionKind) -> &'static str {
+    match kind {
+        ProcessMemoryRegionKind::Heap => "HEAP",
+
+        ProcessMemoryRegionKind::Anonymous => "ANONYMOUS",
+
+        ProcessMemoryRegionKind::SharedLibrary => "SHARED LIB",
+
+        ProcessMemoryRegionKind::MappedFile => "MAPPED FILE",
+
+        ProcessMemoryRegionKind::Stack => "STACK",
+
+        ProcessMemoryRegionKind::ExecutableImage => "EXECUTABLE",
+
+        ProcessMemoryRegionKind::Special => "SPECIAL",
+
+        ProcessMemoryRegionKind::Other => "OTHER",
+    }
+}
+
+fn memory_kind_color(kind: ProcessMemoryRegionKind) -> Color32 {
+    match kind {
+        ProcessMemoryRegionKind::Heap => theme::pink(),
+
+        ProcessMemoryRegionKind::Anonymous => theme::violet(),
+
+        ProcessMemoryRegionKind::SharedLibrary => theme::blue(),
+
+        ProcessMemoryRegionKind::MappedFile => theme::green(),
+
+        ProcessMemoryRegionKind::Stack => theme::gold(),
+
+        ProcessMemoryRegionKind::ExecutableImage => theme::white(),
+
+        ProcessMemoryRegionKind::Special => theme::muted(),
+
+        ProcessMemoryRegionKind::Other => theme::muted(),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MemoryRegionFilter {
+    #[default]
+    All,
+    Heap,
+    Anonymous,
+    SharedLibrary,
+    MappedFile,
+    Stack,
+    Executable,
+    Special,
+    Other,
+    WritableExecutable,
+}
+
+impl MemoryRegionFilter {
+    pub const ALL: [Self; 10] = [
+        Self::All,
+        Self::Heap,
+        Self::Anonymous,
+        Self::SharedLibrary,
+        Self::MappedFile,
+        Self::Stack,
+        Self::Executable,
+        Self::Special,
+        Self::Other,
+        Self::WritableExecutable,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::All => "ALL",
+            Self::Heap => "HEAP",
+            Self::Anonymous => "ANONYMOUS",
+            Self::SharedLibrary => "SHARED LIB",
+            Self::MappedFile => "MAPPED FILE",
+            Self::Stack => "STACK",
+            Self::Executable => "EXECUTABLE",
+            Self::Special => "SPECIAL",
+            Self::Other => "OTHER",
+            Self::WritableExecutable => "W+X ONLY",
+        }
+    }
+
+    fn matches(self, region: &ProcessMemoryRegion) -> bool {
+        match self {
+            Self::All => true,
+
+            Self::Heap => {
+                matches!(region.kind, ProcessMemoryRegionKind::Heap)
+            }
+
+            Self::Anonymous => {
+                matches!(region.kind, ProcessMemoryRegionKind::Anonymous)
+            }
+
+            Self::SharedLibrary => {
+                matches!(region.kind, ProcessMemoryRegionKind::SharedLibrary)
+            }
+
+            Self::MappedFile => {
+                matches!(region.kind, ProcessMemoryRegionKind::MappedFile)
+            }
+
+            Self::Stack => {
+                matches!(region.kind, ProcessMemoryRegionKind::Stack)
+            }
+
+            Self::Executable => {
+                matches!(region.kind, ProcessMemoryRegionKind::ExecutableImage)
+            }
+
+            Self::Special => {
+                matches!(region.kind, ProcessMemoryRegionKind::Special)
+            }
+
+            Self::Other => {
+                matches!(region.kind, ProcessMemoryRegionKind::Other)
+            }
+
+            Self::WritableExecutable => {
+                region.permissions.writable && region.permissions.executable
+            }
+        }
+    }
+}
+
+fn region_matches_search(region: &ProcessMemoryRegion, query: &str) -> bool {
+    let query = query.trim();
+
+    if query.is_empty() {
+        return true;
+    }
+
+    let query = query.to_ascii_lowercase();
+
+    let backing = region
+        .pathname
+        .as_deref()
+        .unwrap_or("(anonymous)")
+        .to_ascii_lowercase();
+
+    let kind = memory_kind_label(region.kind).to_ascii_lowercase();
+
+    let permissions = memory_permissions(&region.permissions).to_ascii_lowercase();
+
+    let start_hex = format!("{:x}", region.start_address);
+
+    let end_hex = format!("{:x}", region.end_address);
+
+    let inode = region.inode.to_string();
+
+    backing.contains(&query)
+        || kind.contains(&query)
+        || permissions.contains(&query)
+        || start_hex.contains(&query)
+        || end_hex.contains(&query)
+        || inode.contains(&query)
+}
+
+fn region_inspector(ui: &mut egui::Ui, region: &ProcessMemoryRegion) {
+    let wx = region.permissions.writable && region.permissions.executable;
+
+    let accent = if wx {
+        theme::gold()
+    } else {
+        memory_kind_color(region.kind)
+    };
+
+    ui.add_space(14.0);
+
+    egui::Frame::new()
+        .fill(theme::panel())
+        .stroke(Stroke::new(
+            if wx { 2.0 } else { 1.0 },
+            if wx { theme::gold() } else { theme::border() },
+        ))
+        .corner_radius(6.0)
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("REGION INSPECTOR")
+                        .monospace()
+                        .size(13.0)
+                        .strong()
+                        .color(theme::white()),
+                );
+
+                ui.label(
+                    egui::RichText::new(memory_kind_label(region.kind))
+                        .monospace()
+                        .strong()
+                        .color(accent),
+                );
+            });
+
+            if wx {
+                ui.label(
+                    egui::RichText::new("▲ WRITABLE + EXECUTABLE REGION")
+                        .monospace()
+                        .strong()
+                        .color(theme::gold()),
+                );
+            }
+
+            ui.add_space(8.0);
+
+            egui::Grid::new("memory_region_inspector")
+                .num_columns(2)
+                .spacing([24.0, 5.0])
+                .show(ui, |ui| {
+                    for (label, value) in [
+                        ("START", format!("0x{:016X}", region.start_address)),
+                        ("END", format!("0x{:016X}", region.end_address)),
+                        ("SIZE", format_bytes(region.size_bytes)),
+                        ("PERMISSIONS", memory_permissions(&region.permissions)),
+                        ("OFFSET", format!("0x{:X}", region.offset)),
+                        ("INODE", region.inode.to_string()),
+                        (
+                            "BACKING",
+                            region
+                                .pathname
+                                .clone()
+                                .unwrap_or_else(|| "(anonymous)".to_string()),
+                        ),
+                    ] {
+                        ui.label(egui::RichText::new(label).monospace().color(theme::muted()));
+
+                        ui.label(egui::RichText::new(value).monospace().color(theme::white()));
+
+                        ui.end_row();
+                    }
+                });
+
+            ui.add_space(8.0);
+
+            ui.horizontal_wrapped(|ui| {
+                for (label, enabled) in [
+                    ("READ", region.permissions.readable),
+                    ("WRITE", region.permissions.writable),
+                    ("EXECUTE", region.permissions.executable),
+                    ("PRIVATE", region.permissions.private),
+                    ("SHARED", region.permissions.shared),
+                ] {
+                    ui.label(
+                        egui::RichText::new(format!("{} {label}", if enabled { "✓" } else { "×" }))
+                            .monospace()
+                            .color(if enabled {
+                                theme::green()
+                            } else {
+                                theme::muted()
+                            }),
+                    );
+                }
+            });
+        });
+}
+
+fn memory_permissions(permissions: &ProcessMemoryPermissions) -> String {
+    let read = if permissions.readable { 'r' } else { '-' };
+
+    let write = if permissions.writable { 'w' } else { '-' };
+
+    let execute = if permissions.executable { 'x' } else { '-' };
+
+    let mapping = if permissions.private {
+        'p'
+    } else if permissions.shared {
+        's'
+    } else {
+        '-'
+    };
+
+    format!("{read}{write}{execute}{mapping}")
 }
 
 fn bar(ui: &mut egui::Ui, fraction: f32, label: &str, color: Color32) {
@@ -331,60 +612,520 @@ pub fn flamegraph_view(ui: &mut egui::Ui, system: &SystemSnapshot, elapsed: f32)
     }
 }
 
-pub fn memory_map_view(ui: &mut egui::Ui, system: &SystemSnapshot, elapsed: f32) {
+pub fn memory_map_view(
+    ui: &mut egui::Ui,
+    machine_name: Option<&str>,
+    process_name: Option<&str>,
+    pid: Option<u32>,
+    map: Option<&ProcessMemoryMap>,
+    loading: bool,
+    error: Option<&str>,
+    page: &mut usize,
+    search: &mut String,
+    filter: &mut MemoryRegionFilter,
+    selected_region: &mut Option<usize>,
+) -> bool {
+    let mut refresh_requested = false;
+
     page_heading(
         ui,
-        "MEMORY CARTOGRAPHY",
-        "virtual address-space map ready for /proc/<pid>/maps, smaps and page-fault correlation",
+        "MEMORY CARTOGRAPHY // PROCESS ADDRESS SPACE",
+        "live Agent inspection // /proc/<pid>/maps // virtual regions, permissions and backing objects",
     );
 
-    let data = AnalysisSnapshot::mock(system, elapsed);
-
-    for region in &data.memory_regions {
+    let (Some(machine_name), Some(process_name), Some(pid)) = (machine_name, process_name, pid)
+    else {
         egui::Frame::new()
             .fill(theme::panel())
             .stroke(Stroke::new(1.0, theme::border()))
-            .corner_radius(5.0)
-            .inner_margin(9.0)
+            .corner_radius(6.0)
+            .inner_margin(12.0)
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new(&region.label)
-                                .monospace()
-                                .strong()
-                                .color(theme::white()),
-                        );
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "0x{:016X} → 0x{:016X} // {}",
-                                region.start, region.end, region.permissions
-                            ))
-                            .monospace()
-                            .size(10.0)
-                            .color(theme::muted()),
-                        );
-                    });
+                ui.label(
+                    egui::RichText::new("NO PROCESS SELECTED")
+                        .monospace()
+                        .strong()
+                        .color(theme::muted()),
+                );
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            egui::RichText::new(format!("dirty {:>5.1}%", region.dirty_percent))
-                                .monospace()
-                                .color(theme::gold()),
-                        );
-                    });
+                ui.label("Open PROCESSES and click MAP beside a process.");
+            });
+
+        return false;
+    };
+
+    /*
+     * Target header.
+     */
+    egui::Frame::new()
+        .fill(theme::panel())
+        .stroke(Stroke::new(1.0, theme::border()))
+        .corner_radius(6.0)
+        .inner_margin(10.0)
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new(process_name)
+                        .monospace()
+                        .size(15.0)
+                        .strong()
+                        .color(theme::white()),
+                );
+
+                ui.label(
+                    egui::RichText::new(format!("PID {pid}"))
+                        .monospace()
+                        .color(theme::pink()),
+                );
+
+                ui.label(
+                    egui::RichText::new(format!("// {machine_name}"))
+                        .monospace()
+                        .color(theme::blue()),
+                );
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("↻ REFRESH MAP").clicked() {
+                        refresh_requested = true;
+                    }
                 });
+            });
+        });
+
+    ui.add_space(10.0);
+
+    if loading {
+        ui.horizontal(|ui| {
+            ui.spinner();
+
+            ui.label(
+                egui::RichText::new("Requesting live virtual memory map from Agent...")
+                    .monospace()
+                    .color(theme::blue()),
+            );
+        });
+
+        return false;
+    }
+
+    if let Some(error) = error {
+        egui::Frame::new()
+            .fill(theme::panel())
+            .stroke(Stroke::new(1.0, theme::gold()))
+            .corner_radius(6.0)
+            .inner_margin(10.0)
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new("INSPECTION FAILED")
+                        .monospace()
+                        .strong()
+                        .color(theme::gold()),
+                );
+
+                ui.label(egui::RichText::new(error).monospace().color(theme::muted()));
+            });
+
+        return false;
+    }
+
+    let Some(map) = map else {
+        ui.label(
+            egui::RichText::new("Waiting for memory-map data.")
+                .monospace()
+                .color(theme::muted()),
+        );
+
+        return false;
+    };
+
+    /*
+     * Summary.
+     */
+    ui.horizontal_wrapped(|ui| {
+        for (label, value, color) in [
+            (
+                "VIRTUAL",
+                format_bytes(map.total_virtual_bytes),
+                theme::blue(),
+            ),
+            ("REGIONS", map.region_count.to_string(), theme::pink()),
+            (
+                "W+X",
+                map.writable_executable_regions.to_string(),
+                if map.writable_executable_regions > 0 {
+                    theme::gold()
+                } else {
+                    theme::green()
+                },
+            ),
+        ] {
+            egui::Frame::new()
+                .fill(theme::panel())
+                .stroke(Stroke::new(1.0, theme::border()))
+                .corner_radius(5.0)
+                .inner_margin(9.0)
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(label)
+                            .monospace()
+                            .size(9.5)
+                            .color(theme::muted()),
+                    );
+
+                    ui.label(egui::RichText::new(value).monospace().strong().color(color));
+                });
+        }
+    });
+
+    if map.writable_executable_regions > 0 {
+        ui.label(
+            egui::RichText::new(format!(
+                "▲ {} writable + executable mapping(s) detected",
+                map.writable_executable_regions
+            ))
+            .monospace()
+            .strong()
+            .color(theme::gold()),
+        );
+    }
+
+    ui.add_space(14.0);
+
+    /*
+     * THE OVERVIEW GRAPH.
+     *
+     * This is the live replacement for
+     * the mock bars you wanted to keep.
+     */
+    egui::Frame::new()
+        .fill(theme::panel())
+        .stroke(Stroke::new(1.0, theme::border()))
+        .corner_radius(6.0)
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("ADDRESS SPACE // COMPOSITION")
+                    .monospace()
+                    .strong()
+                    .color(theme::white()),
+            );
+
+            ui.label(
+                egui::RichText::new("proportion of total mapped virtual address space")
+                    .size(10.5)
+                    .color(theme::muted()),
+            );
+
+            ui.add_space(8.0);
+
+            let total = map.total_virtual_bytes.max(1);
+
+            let overview = [
+                ("heap", map.overview.heap_bytes, theme::pink()),
+                ("anonymous", map.overview.anonymous_bytes, theme::violet()),
+                (
+                    "shared libraries",
+                    map.overview.shared_library_bytes,
+                    theme::blue(),
+                ),
+                (
+                    "mapped files",
+                    map.overview.mapped_file_bytes,
+                    theme::green(),
+                ),
+                ("stacks", map.overview.stack_bytes, theme::gold()),
+                (
+                    "executable image",
+                    map.overview.executable_image_bytes,
+                    theme::white(),
+                ),
+                ("special", map.overview.special_bytes, theme::muted()),
+            ];
+
+            let known_bytes = overview
+                .iter()
+                .fold(0_u64, |total, (_, bytes, _)| total.saturating_add(*bytes));
+
+            for (label, bytes, color) in overview {
+                let fraction = bytes as f32 / total as f32;
+
+                let percent = fraction * 100.0;
 
                 bar(
                     ui,
-                    region.resident_percent / 100.0,
-                    &format!("resident {:>5.1}%", region.resident_percent),
-                    theme::blue(),
+                    fraction,
+                    &format!("{label:<18} {} // {:>5.1}%", format_bytes(bytes), percent,),
+                    color,
                 );
+
+                ui.add_space(4.0);
+            }
+
+            let other = total.saturating_sub(known_bytes);
+
+            if other > 0 {
+                let fraction = other as f32 / total as f32;
+
+                bar(
+                    ui,
+                    fraction,
+                    &format!(
+                        "other              {} // {:>5.1}%",
+                        format_bytes(other),
+                        fraction * 100.0,
+                    ),
+                    theme::muted(),
+                );
+            }
+        });
+
+    ui.add_space(14.0);
+
+    /*
+     * Detailed region explorer.
+     */
+    ui.label(
+        egui::RichText::new("REGION EXPLORER")
+            .monospace()
+            .size(13.0)
+            .strong()
+            .color(theme::white()),
+    );
+
+    ui.label(
+        egui::RichText::new(format!("{} mappings captured", map.regions.len()))
+            .monospace()
+            .size(10.0)
+            .color(theme::muted()),
+    );
+
+    ui.add_space(6.0);
+
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            egui::RichText::new("SEARCH")
+                .monospace()
+                .strong()
+                .color(theme::muted()),
+        );
+
+        let search_changed = ui
+            .add_sized(
+                [360.0, 28.0],
+                egui::TextEdit::singleline(search)
+                    .hint_text("path, type, perms, address, inode..."),
+            )
+            .changed();
+
+        let old_filter = *filter;
+
+        egui::ComboBox::from_id_salt("memory_region_filter")
+            .selected_text(filter.label())
+            .show_ui(ui, |ui| {
+                for candidate in MemoryRegionFilter::ALL {
+                    ui.selectable_value(filter, candidate, candidate.label());
+                }
             });
 
-        ui.add_space(5.0);
+        let filter_changed = *filter != old_filter;
+
+        if ui.button("CLEAR").clicked() {
+            search.clear();
+            *filter = MemoryRegionFilter::All;
+            *page = 0;
+            *selected_region = None;
+        }
+
+        if search_changed || filter_changed {
+            *page = 0;
+            *selected_region = None;
+        }
+    });
+
+    let filtered_indices = map
+        .regions
+        .iter()
+        .enumerate()
+        .filter(|(_, region)| filter.matches(region) && region_matches_search(region, search))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+
+    const REGIONS_PER_PAGE: usize = 100;
+
+    let region_count = filtered_indices.len();
+
+    let page_count = if region_count == 0 {
+        1
+    } else {
+        (region_count + REGIONS_PER_PAGE - 1) / REGIONS_PER_PAGE
+    };
+
+    *page = (*page).min(page_count - 1);
+
+    /*
+     * Pagination controls live OUTSIDE the Grid.
+     */
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(*page > 0, egui::Button::new("⏮ FIRST"))
+            .clicked()
+        {
+            *page = 0;
+        }
+
+        if ui
+            .add_enabled(*page > 0, egui::Button::new("◀ PREVIOUS"))
+            .clicked()
+        {
+            *page -= 1;
+        }
+
+        ui.label(
+            egui::RichText::new(format!("PAGE {} / {}", *page + 1, page_count,))
+                .monospace()
+                .strong()
+                .color(theme::white()),
+        );
+
+        if ui
+            .add_enabled(*page + 1 < page_count, egui::Button::new("NEXT ▶"))
+            .clicked()
+        {
+            *page += 1;
+        }
+
+        if ui
+            .add_enabled(*page + 1 < page_count, egui::Button::new("LAST ⏭"))
+            .clicked()
+        {
+            *page = page_count - 1;
+        }
+    });
+
+    /*
+     * Recalculate these AFTER the buttons.
+     *
+     * That means clicking NEXT immediately renders
+     * the new page instead of waiting one frame.
+     */
+    let start = *page * REGIONS_PER_PAGE;
+
+    let end = (start + REGIONS_PER_PAGE).min(region_count);
+
+    ui.label(
+        egui::RichText::new(if region_count == 0 {
+            "0 mappings".to_string()
+        } else {
+            format!("showing {}–{} of {} mappings", start + 1, end, region_count,)
+        })
+        .monospace()
+        .size(10.0)
+        .color(theme::muted()),
+    );
+
+    ui.add_space(6.0);
+
+    /*
+     * NOW enter the Grid.
+     *
+     * Only table cells and end_row() belong in here.
+     */
+    egui::ScrollArea::horizontal()
+        .id_salt("process_memory_map_regions")
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            egui::Grid::new("process_memory_map_grid")
+                .striped(true)
+                .min_col_width(105.0)
+                .show(ui, |ui| {
+                    for header in [
+                        "START", "END", "SIZE", "PERMS", "TYPE", "OFFSET", "INODE", "BACKING",
+                        "INSPECT",
+                    ] {
+                        ui.label(
+                            egui::RichText::new(header)
+                                .monospace()
+                                .strong()
+                                .color(theme::muted()),
+                        );
+                    }
+
+                    ui.end_row();
+
+                    for &region_index in &filtered_indices[start..end] {
+                        let region = &map.regions[region_index];
+                        let wx = region.permissions.writable && region.permissions.executable;
+
+                        let accent = if wx {
+                            theme::gold()
+                        } else {
+                            memory_kind_color(region.kind)
+                        };
+
+                        ui.label(
+                            egui::RichText::new(format!("0x{:016X}", region.start_address))
+                                .monospace()
+                                .color(theme::white()),
+                        );
+
+                        ui.label(
+                            egui::RichText::new(format!("0x{:016X}", region.end_address))
+                                .monospace()
+                                .color(theme::white()),
+                        );
+
+                        ui.label(egui::RichText::new(format_bytes(region.size_bytes)).monospace());
+
+                        ui.label(
+                            egui::RichText::new(memory_permissions(&region.permissions))
+                                .monospace()
+                                .strong()
+                                .color(if wx { theme::gold() } else { theme::blue() }),
+                        );
+
+                        ui.label(
+                            egui::RichText::new(memory_kind_label(region.kind))
+                                .monospace()
+                                .color(accent),
+                        );
+
+                        ui.label(
+                            egui::RichText::new(format!("0x{:X}", region.offset))
+                                .monospace()
+                                .color(theme::muted()),
+                        );
+
+                        ui.label(
+                            egui::RichText::new(region.inode.to_string())
+                                .monospace()
+                                .color(theme::muted()),
+                        );
+
+                        let backing = region.pathname.as_deref().unwrap_or("(anonymous)");
+
+                        ui.label(egui::RichText::new(backing).monospace().color(accent))
+                            .on_hover_text(backing);
+
+                        let selected = *selected_region == Some(region_index);
+
+                        if ui
+                            .selectable_label(selected, if selected { "◆ OPEN" } else { "◇ VIEW" })
+                            .clicked()
+                        {
+                            *selected_region = Some(region_index);
+                        }
+
+                        ui.end_row();
+                    }
+                });
+        });
+
+    if let Some(index) = *selected_region {
+        if let Some(region) = map.regions.get(index) {
+            region_inspector(ui, region);
+        }
     }
+    refresh_requested
 }
 
 pub fn scheduler_view(ui: &mut egui::Ui, system: &SystemSnapshot, elapsed: f32) {

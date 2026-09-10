@@ -2,6 +2,8 @@ mod agent;
 mod config;
 mod cpu_identity;
 mod format;
+mod inspection;
+mod instruction_vein;
 mod metrics;
 mod protocol;
 mod runtime;
@@ -39,6 +41,21 @@ fn main() -> std::io::Result<()> {
                 eprintln!("Agent // local Observatory server failed: {error}");
             }
         });
+    }
+
+    if cpu_identity::supports_rdtscp() {
+        let first = instruction_vein::read_tsc();
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        let second = instruction_vein::read_tsc();
+
+        println!(
+            "Instruction Vein // TSC // {first} -> {second} // delta {}",
+            second.saturating_sub(first),
+        );
+    } else {
+        println!("Instruction Vein // RDTSCP unsupported");
     }
 
     agent::run(runtime, config)

@@ -1,9 +1,24 @@
 use eframe::egui::{self, Color32, Stroke, StrokeKind};
 
 use crate::{
-    model::{ComponentId, InstructionSample, SystemSnapshot, TruthLevel, format_bytes},
+    model::{
+        ComponentId, InstructionSample, ProcessSnapshot, SystemSnapshot, TruthLevel, format_bytes,
+    },
     theme,
 };
+use wyn_protocol::process_memory::ProcessMemoryMap;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessTab {
+    Running,
+    Sleeping,
+}
+
+impl Default for ProcessTab {
+    fn default() -> Self {
+        Self::Running
+    }
+}
 
 fn heading(ui: &mut egui::Ui, text: &str, subtitle: &str) {
     ui.label(
@@ -89,6 +104,26 @@ fn progress(ui: &mut egui::Ui, fraction: f32, label: &str, color: Color32) {
         label,
         egui::FontId::monospace(10.5),
         theme::white(),
+    );
+}
+
+fn table_cell(ui: &mut egui::Ui, width: f32, text: impl Into<String>, color: Color32) {
+    ui.add_sized(
+        [width, 22.0],
+        egui::Label::new(egui::RichText::new(text.into()).monospace().color(color)).truncate(),
+    );
+}
+
+fn table_header(ui: &mut egui::Ui, width: f32, text: &str) {
+    ui.add_sized(
+        [width, 22.0],
+        egui::Label::new(
+            egui::RichText::new(text)
+                .monospace()
+                .strong()
+                .color(theme::muted()),
+        )
+        .truncate(),
     );
 }
 
@@ -564,7 +599,7 @@ pub fn instruction_feed(
         ui,
         "INSTRUCTION VEIN",
         &format!(
-            "{} CONTEXT // slow-drip machine-code samples",
+            "{} CONTEXT // live selected-process x86-64 samples",
             component.label()
         ),
     );
@@ -573,7 +608,7 @@ pub fn instruction_feed(
         truth_badge(ui, TruthLevel::Sampled);
 
         ui.label(
-            egui::RichText::new("MOCK STREAM")
+            egui::RichText::new("LIVE PERF STREAM")
                 .size(10.5)
                 .monospace()
                 .strong()
@@ -581,39 +616,33 @@ pub fn instruction_feed(
         );
     });
 
-    ui.label(
-        egui::RichText::new(
-            "Relevance/context filter, not a claim of physical instruction location.",
-        )
-        .size(10.5)
-        .color(theme::muted()),
-    );
-
-    if component == ComponentId::Gpu {
-        ui.label(
+    ui.add(
+        egui::Label::new(
             egui::RichText::new(
-                "GPU mock: x86-64 host-side work. Future GPU ISA can use NVIDIA SASS.",
+                "Host CPU execution sampled from the selected process. Component selection is visualization context.",
             )
-            .size(10.0)
-            .monospace()
-            .color(theme::gold()),
-        );
-    }
+                .size(10.5)
+                .color(theme::muted()),
+        )
+            .wrap(),
+    );
 
     ui.add_space(8.0);
 
-    let filtered = snapshot
-        .instruction_samples
-        .iter()
-        .filter(|sample| sample.component == component)
-        .collect::<Vec<_>>();
+    let filtered = snapshot.instruction_samples.iter().collect::<Vec<_>>();
 
     if filtered.is_empty() {
-        ui.label(
-            egui::RichText::new("No instruction samples for this component yet.")
-                .monospace()
-                .color(theme::muted()),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(
+                    "No live instruction samples yet. Select a process in PROCESSES, then return to THE MACHINE."
+                )
+                    .monospace()
+                    .color(theme::muted()),
+            )
+                .wrap(),
         );
+
         return;
     }
 
@@ -814,7 +843,16 @@ pub fn cpu_view(ui: &mut egui::Ui, snapshot: &SystemSnapshot, descend: bool) {
     });
 }
 
-pub fn memory_view(ui: &mut egui::Ui, snapshot: &SystemSnapshot, descend: bool) {
+pub fn memory_view(
+    ui: &mut egui::Ui,
+    snapshot: &SystemSnapshot,
+    descend: bool,
+    process_name: Option<&str>,
+    pid: Option<u32>,
+    map: Option<&ProcessMemoryMap>,
+    loading: bool,
+    error: Option<&str>,
+) {
     heading(
         ui,
         "MEMORY // PAGE CATHEDRAL",
@@ -872,31 +910,217 @@ pub fn memory_view(ui: &mut egui::Ui, snapshot: &SystemSnapshot, descend: bool) 
         .inner_margin(12.0)
         .show(ui, |ui| {
             ui.label(
-                egui::RichText::new("PROCESS MEMORY MAP // future live backend")
+                egui::RichText::new("GLOBAL MEMORY MAP // PHYSICAL MEMORY")
                     .monospace()
                     .strong()
                     .color(theme::white()),
             );
 
-            for (label, value, color) in [
-                ("heap", 0.71, theme::pink()),
-                ("anonymous", 0.49, theme::violet()),
-                ("shared libraries", 0.34, theme::blue()),
-                ("mapped files", 0.23, theme::green()),
-                ("stacks", 0.11, theme::gold()),
+            ui.label(
+                egui::RichText::new(
+                    "live machine-wide memory telemetry // rows are relative to total RAM and may overlap",
+                )
+                    .size(10.5)
+                    .color(theme::muted()),
+            );
+
+            ui.add_space(8.0);
+
+            let total = snapshot.memory.total_bytes.max(1);
+
+            for (label, bytes, color) in [
+                (
+                    "used",
+                    snapshot.memory.used_bytes,
+                    theme::pink(),
+                ),
+                (
+                    "available",
+                    snapshot.memory.available_bytes,
+                    theme::green(),
+                ),
+                (
+                    "active",
+                    snapshot.memory.active_bytes,
+                    theme::violet(),
+                ),
+                (
+                    "cached",
+                    snapshot.memory.cached_bytes,
+                    theme::blue(),
+                ),
+                (
+                    "dirty",
+                    snapshot.memory.dirty_bytes,
+                    theme::gold(),
+                ),
             ] {
-                progress(ui, value, label, color);
+                let fraction =
+                    bytes as f32 / total as f32;
+
+                progress(
+                    ui,
+                    fraction,
+                    &format!(
+                        "{label:<12} {} // {:>5.1}%",
+                        format_bytes(bytes),
+                        fraction * 100.0,
+                    ),
+                    color,
+                );
+
                 ui.add_space(4.0);
             }
 
-            if descend {
-                ui.label(
-                    egui::RichText::new(
-                        "DESCEND target: mappings → pages → faults → NUMA → backing store",
-                    )
+            ui.add_space(4.0);
+
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} page faults / s",
+                    snapshot.memory.page_faults_per_second,
+                ))
                     .monospace()
-                    .size(11.0)
+                    .color(theme::muted()),
+            );
+        });
+
+    egui::Frame::new()
+        .fill(theme::panel())
+        .stroke(Stroke::new(1.0, theme::border()))
+        .corner_radius(6.0)
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new("PROCESS MEMORY MAP")
+                        .monospace()
+                        .strong()
+                        .color(theme::white()),
+                );
+
+                if let (Some(name), Some(pid)) = (process_name, pid) {
+                    ui.label(
+                        egui::RichText::new(format!("// {name} // PID {pid}"))
+                            .monospace()
+                            .color(theme::blue()),
+                    );
+                }
+            });
+
+            ui.add_space(6.0);
+
+            if loading {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+
+                    ui.label(
+                        egui::RichText::new("requesting live address space...")
+                            .monospace()
+                            .color(theme::blue()),
+                    );
+                });
+
+                return;
+            }
+
+            if let Some(error) = error {
+                ui.label(
+                    egui::RichText::new(format!("INSPECTION ERROR // {error}"))
+                        .monospace()
+                        .color(theme::gold()),
+                );
+
+                return;
+            }
+
+            let Some(map) = map else {
+                ui.label(
+                    egui::RichText::new("Select a process from PROCESSES and click MAP.")
+                        .monospace()
+                        .color(theme::muted()),
+                );
+
+                return;
+            };
+
+            let total = map.total_virtual_bytes.max(1);
+
+            let rows = [
+                ("heap", map.overview.heap_bytes, theme::pink()),
+                ("anonymous", map.overview.anonymous_bytes, theme::violet()),
+                (
+                    "shared libraries",
+                    map.overview.shared_library_bytes,
+                    theme::blue(),
+                ),
+                (
+                    "mapped files",
+                    map.overview.mapped_file_bytes,
+                    theme::green(),
+                ),
+                ("stacks", map.overview.stack_bytes, theme::gold()),
+                (
+                    "executable image",
+                    map.overview.executable_image_bytes,
+                    theme::white(),
+                ),
+                ("special", map.overview.special_bytes, theme::muted()),
+            ];
+
+            for (label, bytes, color) in rows {
+                let fraction = bytes as f32 / total as f32;
+
+                progress(
+                    ui,
+                    fraction,
+                    &format!(
+                        "{label:<18} {} // {:>5.1}%",
+                        format_bytes(bytes),
+                        fraction * 100.0,
+                    ),
+                    color,
+                );
+
+                ui.add_space(4.0);
+            }
+
+            ui.add_space(5.0);
+
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} virtual",
+                        format_bytes(map.total_virtual_bytes)
+                    ))
+                    .monospace()
                     .color(theme::blue()),
+                );
+
+                ui.label(
+                    egui::RichText::new(format!("{} regions", map.region_count))
+                        .monospace()
+                        .color(theme::pink()),
+                );
+
+                ui.label(
+                    egui::RichText::new(format!("{} W+X", map.writable_executable_regions))
+                        .monospace()
+                        .color(if map.writable_executable_regions > 0 {
+                            theme::gold()
+                        } else {
+                            theme::green()
+                        }),
+                );
+            });
+
+            if descend {
+                ui.add_space(8.0);
+
+                ui.label(
+                    egui::RichText::new("DESCEND // detailed regions available in MEMORY MAP")
+                        .monospace()
+                        .size(11.0)
+                        .color(theme::blue()),
                 );
             }
         });
@@ -1327,7 +1551,13 @@ pub fn npu_runtime_view(ui: &mut egui::Ui, snapshot: &SystemSnapshot, descend: b
     }
 }
 
-pub fn processes_view(ui: &mut egui::Ui, snapshot: &SystemSnapshot, descend: bool) {
+pub fn processes_view(
+    ui: &mut egui::Ui,
+    snapshot: &SystemSnapshot,
+    descend: bool,
+    tab: &mut ProcessTab,
+) -> Option<ProcessSnapshot> {
+    let mut inspect_process = None;
     heading(
         ui,
         "PROCESSES // LIVING WORKLOAD",
@@ -1340,7 +1570,7 @@ pub fn processes_view(ui: &mut egui::Ui, snapshot: &SystemSnapshot, descend: boo
                 .monospace()
                 .color(theme::muted()),
         );
-        return;
+        return None;
     }
 
     ui.columns(3, |columns| {
@@ -1366,175 +1596,230 @@ pub fn processes_view(ui: &mut egui::Ui, snapshot: &SystemSnapshot, descend: boo
 
     ui.add_space(10.0);
 
-    egui::ScrollArea::horizontal()
-        .id_salt("process_table_horizontal")
-        .auto_shrink([false, true])
+    let running_count = snapshot
+        .processes
+        .iter()
+        .filter(|process| process.state == "running")
+        .count();
+
+    let sleeping_count = snapshot
+        .processes
+        .iter()
+        .filter(|process| process.state != "running")
+        .count();
+
+    ui.horizontal(|ui| {
+        if ui
+            .add(
+                egui::Button::new(format!("RUNNING // {running_count}"))
+                    .selected(*tab == ProcessTab::Running),
+            )
+            .clicked()
+        {
+            *tab = ProcessTab::Running;
+        }
+
+        if ui
+            .add(
+                egui::Button::new(format!("SLEEPING // {sleeping_count}"))
+                    .selected(*tab == ProcessTab::Sleeping),
+            )
+            .clicked()
+        {
+            *tab = ProcessTab::Sleeping;
+        }
+    });
+
+    ui.add_space(10.0);
+
+    let table_width = ui.available_width();
+
+    /*
+     * Reserve a little room for inter-column
+     * spacing. The remaining width is divided
+     * proportionally.
+     */
+    let usable = (table_width - 90.0).max(900.0);
+
+    let pid_w = usable * 0.065;
+    let process_w = usable * 0.225;
+    let state_w = usable * 0.095;
+    let cpu_w = usable * 0.070;
+    let ram_w = usable * 0.095;
+    let last_cpu_w = usable * 0.075;
+    let threads_w = usable * 0.075;
+    let read_w = usable * 0.105;
+    let write_w = usable * 0.105;
+    let map_w = usable * 0.065;
+
+    egui::Frame::new()
+        .fill(theme::panel())
+        .stroke(Stroke::new(1.0, theme::border()))
+        .corner_radius(6.0)
+        .inner_margin(8.0)
         .show(ui, |ui| {
-            egui::Grid::new("process_grid")
-                .striped(true)
-                .min_col_width(78.0)
-                .show(ui, |ui| {
-                    for header in [
-                        "PID", "PROCESS", "STATE", "CPU", "RAM", "LAST CPU", "THREADS", "READ",
-                        "WRITE",
-                    ] {
-                        ui.label(
-                            egui::RichText::new(header)
-                                .monospace()
-                                .strong()
-                                .color(theme::muted()),
-                        );
-                    }
+            /*
+             * Header.
+             */
+            ui.horizontal(|ui| {
+                table_header(ui, pid_w, "PID");
+                table_header(ui, process_w, "PROCESS");
+                table_header(ui, state_w, "STATE");
+                table_header(ui, cpu_w, "CPU");
+                table_header(ui, ram_w, "RAM");
+                table_header(ui, last_cpu_w, "LAST CPU");
+                table_header(ui, threads_w, "THREADS");
+                table_header(ui, read_w, "READ");
+                table_header(ui, write_w, "WRITE");
+                table_header(ui, map_w, "MEMORY");
+            });
 
-                    ui.end_row();
+            ui.separator();
 
-                    for process in &snapshot.processes {
-                        ui.label(egui::RichText::new(process.pid.to_string()).monospace());
+            let mut visible_processes = snapshot
+                .processes
+                .iter()
+                .filter(|process| match tab {
+                    ProcessTab::Running => process.state == "running",
 
-                        let executable = process
-                            .executable
-                            .as_deref()
-                            .unwrap_or("executable path unavailable");
+                    ProcessTab::Sleeping => process.state != "running",
+                })
+                .collect::<Vec<_>>();
 
-                        ui.label(
+            visible_processes.sort_by(|a, b| {
+                a.name
+                    .to_ascii_lowercase()
+                    .cmp(&b.name.to_ascii_lowercase())
+                    .then_with(|| a.pid.cmp(&b.pid))
+            });
+
+            for process in visible_processes {
+                let executable = process
+                    .executable
+                    .as_deref()
+                    .unwrap_or("executable path unavailable");
+
+                let state_color = match process.state.as_str() {
+                    "running" => theme::green(),
+
+                    "disk-sleep" | "zombie" => theme::gold(),
+
+                    _ => theme::muted(),
+                };
+
+                let cpu_text = if process.cpu_rate_available {
+                    format!("{:.1}%", process.cpu_usage)
+                } else {
+                    "baseline".to_string()
+                };
+
+                let memory_text = if process.memory_available {
+                    format_bytes(process.memory_bytes)
+                } else {
+                    "N/A".to_string()
+                };
+
+                let read_text = if process.io_rates_available {
+                    format!("{:.3} MiB/s", process.read_mib_s)
+                } else {
+                    "N/A".to_string()
+                };
+
+                let write_text = if process.io_rates_available {
+                    format!("{:.3} MiB/s", process.write_mib_s)
+                } else {
+                    "N/A".to_string()
+                };
+
+                ui.horizontal(|ui| {
+                    table_cell(ui, pid_w, process.pid.to_string(), theme::text());
+
+                    let process_response = ui.add_sized(
+                        [process_w, 22.0],
+                        egui::Label::new(
                             egui::RichText::new(&process.name)
                                 .monospace()
                                 .color(theme::white()),
                         )
-                        .on_hover_text(executable);
+                        .truncate(),
+                    );
 
-                        let state_color = match process.state.as_str() {
-                            "running" => theme::green(),
-                            "disk-sleep" | "zombie" => theme::gold(),
-                            _ => theme::muted(),
-                        };
+                    process_response.on_hover_text(format!("{}\n{}", process.name, executable,));
 
-                        ui.label(
-                            egui::RichText::new(&process.state)
-                                .monospace()
-                                .color(state_color),
-                        );
+                    table_cell(ui, state_w, &process.state, state_color);
 
-                        let cpu_text = if process.cpu_rate_available {
-                            format!("{:.1}%", process.cpu_usage)
+                    table_cell(
+                        ui,
+                        cpu_w,
+                        cpu_text,
+                        if process.cpu_rate_available {
+                            theme::pink()
                         } else {
-                            "baseline".to_string()
-                        };
+                            theme::muted()
+                        },
+                    );
 
-                        ui.label(egui::RichText::new(cpu_text).monospace().color(
-                            if process.cpu_rate_available {
-                                theme::pink()
-                            } else {
-                                theme::muted()
-                            },
-                        ));
+                    table_cell(ui, ram_w, memory_text, theme::text());
 
-                        let memory_text = if process.memory_available {
-                            format_bytes(process.memory_bytes)
-                        } else {
-                            "N/A".to_string()
-                        };
+                    table_cell(
+                        ui,
+                        last_cpu_w,
+                        format!("{:02}", process.last_cpu),
+                        theme::blue(),
+                    );
 
-                        ui.label(egui::RichText::new(memory_text).monospace());
+                    table_cell(ui, threads_w, process.threads.to_string(), theme::text());
 
-                        ui.label(
-                            egui::RichText::new(format!("{:02}", process.last_cpu))
-                                .monospace()
-                                .color(theme::blue()),
-                        );
+                    table_cell(ui, read_w, read_text, theme::green());
 
-                        ui.label(egui::RichText::new(process.threads.to_string()).monospace());
+                    table_cell(ui, write_w, write_text, theme::violet());
 
-                        let read_text = if process.io_rates_available {
-                            format!("{:.3} MiB/s", process.read_mib_s)
-                        } else {
-                            "N/A".to_string()
-                        };
-
-                        let write_text = if process.io_rates_available {
-                            format!("{:.3} MiB/s", process.write_mib_s)
-                        } else {
-                            "N/A".to_string()
-                        };
-
-                        ui.label(
-                            egui::RichText::new(read_text)
-                                .monospace()
-                                .color(theme::green()),
-                        );
-
-                        ui.label(
-                            egui::RichText::new(write_text)
-                                .monospace()
-                                .color(theme::violet()),
-                        );
-
-                        ui.end_row();
-
-                        if descend {
-                            ui.label("");
-
-                            ui.label(
-                                egui::RichText::new(format!("↳ PPID {}", process.parent_pid))
-                                    .size(10.0)
-                                    .monospace()
-                                    .color(theme::muted()),
-                            );
-
-                            ui.label(
-                                egui::RichText::new(if process.cpu_rate_available {
-                                    "CPU rate LIVE"
-                                } else {
-                                    "CPU baseline"
-                                })
-                                .size(10.0)
-                                .monospace()
-                                .color(theme::muted()),
-                            );
-
-                            ui.label(
-                                egui::RichText::new(if process.io_rates_available {
-                                    "I/O rate LIVE"
-                                } else {
-                                    "I/O unavailable"
-                                })
-                                .size(10.0)
-                                .monospace()
-                                .color(theme::muted()),
-                            );
-
-                            ui.label(
-                                egui::RichText::new(if process.memory_available {
-                                    "RSS observed"
-                                } else {
-                                    "RSS unavailable"
-                                })
-                                .size(10.0)
-                                .monospace()
-                                .color(theme::muted()),
-                            );
-
-                            let start = process
-                                .started_at_unix_ms
-                                .map(|value| format!("start {value} ms"))
-                                .unwrap_or_else(|| "start unavailable".into());
-
-                            ui.label(
-                                egui::RichText::new(start)
-                                    .size(10.0)
-                                    .monospace()
-                                    .color(theme::muted()),
-                            );
-
-                            ui.label("");
-                            ui.label("");
-                            ui.label("");
-                            ui.label("");
-                            ui.end_row();
-                        }
+                    if ui
+                        .add_sized([map_w, 22.0], egui::Button::new("MAP"))
+                        .on_hover_text("Open this process's virtual memory map")
+                        .clicked()
+                    {
+                        inspect_process = Some(process.clone());
                     }
                 });
+
+                if descend {
+                    ui.horizontal(|ui| {
+                        ui.add_space(pid_w);
+
+                        let start = process
+                            .started_at_unix_ms
+                            .map(|value| format!("start {value} ms"))
+                            .unwrap_or_else(|| "start unavailable".into());
+
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "↳ PPID {}   //   {}   //   {}   //   {}",
+                                process.parent_pid,
+                                if process.cpu_rate_available {
+                                    "CPU LIVE"
+                                } else {
+                                    "CPU baseline"
+                                },
+                                if process.io_rates_available {
+                                    "I/O LIVE"
+                                } else {
+                                    "I/O unavailable"
+                                },
+                                start,
+                            ))
+                            .monospace()
+                            .size(10.0)
+                            .color(theme::muted()),
+                        );
+                    });
+                }
+
+                ui.separator();
+            }
         });
+
+    inspect_process
 }
 
 pub fn kernel_view(ui: &mut egui::Ui, _snapshot: &SystemSnapshot, descend: bool) {

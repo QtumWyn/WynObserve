@@ -16,6 +16,10 @@ nvml-wrapper = "0.13"
 libc = "0.2"
 wyn-protocol = { workspace = true }
 toml = "1.1.5"
+iced-x86 = "1.21.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+perf-event-open-sys = "6.0.0"
 
 [build-dependencies]
 cc = "1"

@@ -49,4 +49,9 @@ assets = [
         "etc/wyncommand/observatory-prod.toml",
         "644"
     ],
+    [
+        "assets/icons/wynobserve.png",
+        "usr/share/icons/hicolor/512x512/apps/wynobserve.png",
+        "644"
+    ],
 ]

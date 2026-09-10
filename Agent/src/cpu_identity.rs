@@ -70,3 +70,15 @@ fn read_brand_string() -> String {
         .trim()
         .to_string()
 }
+
+pub fn supports_rdtscp() -> bool {
+    let max_extended = cpuid(0x8000_0000, 0);
+
+    if max_extended.eax < 0x8000_0001 {
+        return false;
+    }
+
+    let features = cpuid(0x8000_0001, 0);
+
+    features.edx & (1 << 27) != 0
+}

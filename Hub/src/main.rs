@@ -1,10 +1,12 @@
 mod agent_server;
 mod client_server;
 mod config;
+mod control_panel;
 mod state;
 
 use std::thread;
 
+use control_panel::ControlPlane;
 use state::FleetRegistry;
 
 fn main() -> std::io::Result<()> {
@@ -18,17 +20,27 @@ fn main() -> std::io::Result<()> {
 
     println!();
 
+    /*
+     * FleetRegistry:
+     * telemetry/state database in memory.
+     */
     let registry = FleetRegistry::default();
 
+    let control_plane = ControlPlane::default();
+
     let client_registry = registry.clone();
+
+    let client_control_plane = control_plane.clone();
 
     let observatory_address = config.observatory.listen_address.clone();
 
     thread::spawn(move || {
-        if let Err(error) = client_server::run(client_registry, &observatory_address) {
+        if let Err(error) =
+            client_server::run(client_registry, client_control_plane, &observatory_address)
+        {
             eprintln!("Hub // Observatory egress failed: {error}");
         }
     });
 
-    agent_server::run(registry, &config.agent.listen_address)
+    agent_server::run(registry, control_plane, &config.agent.listen_address)
 }

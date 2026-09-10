@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use eframe::egui;
 
@@ -7,10 +7,18 @@ use crate::{
     fleet::FleetState,
     hub::HubFleetClient,
     live::LiveTelemetry,
-    model::{ComponentId, SystemSnapshot, TelemetrySource},
+    model::{
+        ComponentId, InstructionArchitecture, InstructionSample, ProcessSnapshot, SystemSnapshot,
+        TelemetrySource, TruthLevel,
+    },
     theme, ui,
     updater::{UpdateState, Updater},
 };
+use wyn_protocol::{ObservatoryResponseKind, process_memory::ProcessMemoryMap};
+
+const INSTRUCTION_VEIN_INTERVAL: Duration = Duration::from_millis(250);
+
+const INSTRUCTION_VEIN_BUFFER_SIZE: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -169,6 +177,17 @@ impl View {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ProcessMemoryTarget {
+    machine_id: String,
+    machine_name: String,
+
+    pid: u32,
+    process_name: String,
+
+    started_at_unix_ms: Option<u64>,
+}
+
 pub struct ObservatoryApp {
     source: Box<dyn TelemetrySource>,
     hub: HubFleetClient,
@@ -183,11 +202,39 @@ pub struct ObservatoryApp {
     fleet: FleetState,
     selected_machine_id: String,
 
+    memory_map_target: Option<ProcessMemoryTarget>,
+
+    memory_map_request_id: Option<u64>,
+
+    memory_map_result: Option<ProcessMemoryMap>,
+
+    memory_map_error: Option<String>,
+
+    memory_map_page: usize,
+    memory_map_search: String,
+
+    memory_map_filter: ui::MemoryRegionFilter,
+
+    memory_map_selected_region: Option<usize>,
+
+    instruction_vein_target: Option<ProcessMemoryTarget>,
+
+    instruction_vein_request_id: Option<u64>,
+
+    instruction_vein_request_target: Option<(String, u32)>,
+
+    instruction_vein_samples: Vec<InstructionSample>,
+
+    instruction_vein_last_request: Option<Instant>,
+
+    instruction_vein_next_sequence: u64,
+
     started: Instant,
     paused_at: Option<f64>,
     paused: bool,
     playback_speed: f32,
     view: View,
+    process_tab: ui::ProcessTab,
     selected: ComponentId,
     selected_instruction: Option<u64>,
     descend: bool,
@@ -239,11 +286,34 @@ impl ObservatoryApp {
             snapshot,
             fleet,
             selected_machine_id,
+            memory_map_target: None,
+            memory_map_request_id: None,
+            memory_map_result: None,
+            memory_map_error: None,
+            memory_map_page: 0,
+            memory_map_search: String::new(),
+
+            memory_map_filter: ui::MemoryRegionFilter::All,
+
+            memory_map_selected_region: None,
+
+            instruction_vein_target: None,
+
+            instruction_vein_request_id: None,
+
+            instruction_vein_request_target: None,
+
+            instruction_vein_samples: Vec::new(),
+
+            instruction_vein_last_request: None,
+
+            instruction_vein_next_sequence: 1,
             started: Instant::now(),
             paused_at: None,
             paused: false,
             playback_speed: 1.0,
             view: View::Overview,
+            process_tab: ui::ProcessTab::Running,
             selected: ComponentId::Cpu,
             selected_instruction: None,
             descend: false,
@@ -335,10 +405,8 @@ impl ObservatoryApp {
     fn top_bar(&mut self, root: &mut egui::Ui) {
         egui::Panel::top("observatory_top")
             .exact_size(66.0)
-            .frame(egui::Frame::new().fill(theme::panel()))
+            .frame(egui::Frame::new().fill(theme::panel()).inner_margin(10.0))
             .show(root, |ui| {
-                ui.add_space(8.0);
-
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.label(
@@ -412,7 +480,7 @@ impl ObservatoryApp {
     fn nav(&mut self, root: &mut egui::Ui) {
         egui::Panel::left("observatory_nav")
             .exact_size(156.0)
-            .frame(egui::Frame::new().fill(theme::panel()))
+            .frame(egui::Frame::new().fill(theme::panel()).inner_margin(8.0))
             .show(root, |ui| {
                 egui::ScrollArea::vertical()
                     .id_salt("observatory_nav_scroll")
@@ -495,10 +563,8 @@ impl ObservatoryApp {
     fn bottom_bar(&mut self, root: &mut egui::Ui) {
         egui::Panel::bottom("observatory_timeline")
             .exact_size(58.0)
-            .frame(egui::Frame::new().fill(theme::panel()))
+            .frame(egui::Frame::new().fill(theme::panel()).inner_margin(10.0))
             .show(root, |ui| {
-                ui.add_space(8.0);
-
                 ui.horizontal(|ui| {
                     if ui
                         .button(if self.paused {
@@ -1000,9 +1066,23 @@ impl ObservatoryApp {
         match self.view {
             View::Overview => {
                 if let Some(machine) = selected_machine {
+                    let mut live_machine = machine.clone();
+
+                    let target_matches = self
+                        .instruction_vein_target
+                        .as_ref()
+                        .is_some_and(|target| target.machine_id == machine.id);
+
+                    if target_matches {
+                        live_machine.system.instruction_samples =
+                            self.instruction_vein_samples.clone();
+                    } else {
+                        live_machine.system.instruction_samples.clear();
+                    }
+
                     ui::overview(
                         ui,
-                        machine,
+                        &live_machine,
                         self.elapsed() as f32,
                         &mut self.selected,
                         &mut self.selected_instruction,
@@ -1015,9 +1095,28 @@ impl ObservatoryApp {
             View::Server => ui::server_view(ui, &self.snapshot, self.elapsed() as f32),
             View::Fleet => ui::fleet_view(ui, &self.fleet, &mut self.selected_machine_id),
             View::Cpu => ui::cpu_view(ui, &self.snapshot, self.descend),
-            View::Memory => ui::memory_view(ui, &self.snapshot, self.descend),
+            View::Memory => {
+                let target = self.memory_map_target.as_ref();
+
+                ui::memory_view(
+                    ui,
+                    &self.snapshot,
+                    self.descend,
+                    target.map(|target| target.process_name.as_str()),
+                    target.map(|target| target.pid),
+                    self.memory_map_result.as_ref(),
+                    self.memory_map_request_id.is_some(),
+                    self.memory_map_error.as_deref(),
+                )
+            }
             View::Gpu => ui::gpu_view(ui, &self.snapshot, self.descend),
-            View::Processes => ui::processes_view(ui, &self.snapshot, self.descend),
+            View::Processes => {
+                if let Some(process) =
+                    ui::processes_view(ui, &self.snapshot, self.descend, &mut self.process_tab)
+                {
+                    self.open_process_memory_map(process);
+                }
+            }
             View::Network => ui::network_view(ui, &self.snapshot, self.descend),
 
             View::Npu => ui::npu_view(ui, &self.snapshot, self.descend),
@@ -1028,7 +1127,29 @@ impl ObservatoryApp {
             View::Causality => ui::causality_view(ui, &self.snapshot, self.elapsed() as f32),
             View::Syscalls => ui::syscalls_view(ui, &self.snapshot, self.elapsed() as f32),
             View::Flamegraph => ui::flamegraph_view(ui, &self.snapshot, self.elapsed() as f32),
-            View::MemoryMap => ui::memory_map_view(ui, &self.snapshot, self.elapsed() as f32),
+            View::MemoryMap => {
+                let refresh_requested = {
+                    let target = self.memory_map_target.as_ref();
+
+                    ui::memory_map_view(
+                        ui,
+                        target.map(|target| target.machine_name.as_str()),
+                        target.map(|target| target.process_name.as_str()),
+                        target.map(|target| target.pid),
+                        self.memory_map_result.as_ref(),
+                        self.memory_map_request_id.is_some(),
+                        self.memory_map_error.as_deref(),
+                        &mut self.memory_map_page,
+                        &mut self.memory_map_search,
+                        &mut self.memory_map_filter,
+                        &mut self.memory_map_selected_region,
+                    )
+                };
+
+                if refresh_requested {
+                    self.refresh_process_memory_map();
+                }
+            }
             View::Scheduler => ui::scheduler_view(ui, &self.snapshot, self.elapsed() as f32),
             View::Cache => ui::cache_view(ui, &self.snapshot, self.elapsed() as f32),
             View::Interrupts => ui::irq_view(ui, &self.snapshot, self.elapsed() as f32),
@@ -1131,6 +1252,344 @@ impl ObservatoryApp {
             View::Logs => ui::logs_view(ui, &self.snapshot),
         }
     }
+
+    fn open_process_memory_map(&mut self, process: ProcessSnapshot) {
+        let machine_id = self.selected_machine_id.clone();
+
+        let machine_name = self.selected_machine_name().to_string();
+
+        let target = ProcessMemoryTarget {
+            machine_id: machine_id.clone(),
+
+            machine_name,
+
+            pid: process.pid,
+
+            process_name: process.name.clone(),
+
+            started_at_unix_ms: process.started_at_unix_ms,
+        };
+
+        self.memory_map_target = Some(target.clone());
+
+        self.instruction_vein_target = Some(target);
+
+        self.instruction_vein_samples.clear();
+
+        self.instruction_vein_last_request = None;
+
+        self.selected_instruction = None;
+
+        self.memory_map_result = None;
+        self.memory_map_error = None;
+
+        self.memory_map_page = 0;
+
+        self.memory_map_search.clear();
+
+        self.memory_map_filter = ui::MemoryRegionFilter::All;
+
+        self.memory_map_selected_region = None;
+
+        /*
+         * Move to the page immediately.
+         *
+         * The user sees the loading state
+         * while the request travels through:
+         *
+         * Observatory -> Hub -> Agent.
+         */
+        self.view = View::MemoryMap;
+
+        if machine_id.is_empty() {
+            self.memory_map_request_id = None;
+
+            self.memory_map_error = Some("No Fleet machine is selected.".to_string());
+
+            return;
+        }
+
+        match self.hub.request_process_memory_map(
+            &machine_id,
+            process.pid,
+            process.started_at_unix_ms,
+        ) {
+            Ok(request_id) => {
+                self.memory_map_request_id = Some(request_id);
+            }
+
+            Err(error) => {
+                self.memory_map_request_id = None;
+
+                self.memory_map_error = Some(error);
+            }
+        }
+    }
+
+    fn refresh_process_memory_map(&mut self) {
+        let Some(target) = self.memory_map_target.clone() else {
+            return;
+        };
+
+        self.memory_map_result = None;
+
+        self.memory_map_error = None;
+
+        self.memory_map_page = 0;
+
+        self.memory_map_selected_region = None;
+
+        match self.hub.request_process_memory_map(
+            &target.machine_id,
+            target.pid,
+            target.started_at_unix_ms,
+        ) {
+            Ok(request_id) => {
+                self.memory_map_request_id = Some(request_id);
+            }
+
+            Err(error) => {
+                self.memory_map_request_id = None;
+
+                self.memory_map_error = Some(error);
+            }
+        }
+    }
+
+    fn poll_process_memory_map_response(&mut self) {
+        let Some(request_id) = self.memory_map_request_id else {
+            return;
+        };
+
+        let Some(response) = self.hub.take_response(request_id) else {
+            return;
+        };
+
+        self.memory_map_request_id = None;
+
+        match response {
+            ObservatoryResponseKind::ProcessMemoryMap { machine_id, map } => {
+                if let Some(target) = &self.memory_map_target {
+                    if target.machine_id != machine_id {
+                        self.memory_map_error = Some(format!(
+                            "Memory map returned for machine `{machine_id}` instead of `{}`",
+                            target.machine_id
+                        ));
+
+                        return;
+                    }
+
+                    if target.pid != map.pid {
+                        self.memory_map_error = Some(format!(
+                            "Memory map returned PID {} instead of PID {}",
+                            map.pid, target.pid,
+                        ));
+
+                        return;
+                    }
+                }
+
+                self.memory_map_error = None;
+                self.memory_map_result = Some(map);
+            }
+
+            ObservatoryResponseKind::InstructionVein { .. } => {
+                self.memory_map_result = None;
+
+                self.memory_map_error =
+                    Some("Received Instruction Vein data for a memory-map request".to_string());
+            }
+
+            ObservatoryResponseKind::Error { code, message } => {
+                self.memory_map_result = None;
+
+                self.memory_map_error = Some(format!("{code} // {message}"));
+            }
+        }
+    }
+
+    fn maybe_request_instruction_vein(&mut self) {
+        /*
+         * Only sample while the Vein is actually
+         * visible.
+         */
+        if self.view != View::Overview || self.paused || self.instruction_vein_request_id.is_some()
+        {
+            return;
+        }
+
+        let Some(target) = self.instruction_vein_target.clone() else {
+            return;
+        };
+
+        /*
+         * Never inspect a process belonging to a
+         * different Fleet machine than the one
+         * currently selected.
+         */
+        if target.machine_id != self.selected_machine_id {
+            return;
+        }
+
+        if self
+            .instruction_vein_last_request
+            .is_some_and(|last| last.elapsed() < INSTRUCTION_VEIN_INTERVAL)
+        {
+            return;
+        }
+
+        match self.hub.request_instruction_vein_sample(
+            &target.machine_id,
+            target.pid,
+            target.started_at_unix_ms,
+        ) {
+            Ok(request_id) => {
+                self.instruction_vein_request_id = Some(request_id);
+
+                self.instruction_vein_request_target = Some((target.machine_id, target.pid));
+
+                self.instruction_vein_last_request = Some(Instant::now());
+            }
+
+            Err(error) => {
+                eprintln!("Observatory // Instruction Vein request failed // {error}");
+
+                self.instruction_vein_last_request = Some(Instant::now());
+            }
+        }
+    }
+
+    fn poll_instruction_vein_response(&mut self) {
+        let Some(request_id) = self.instruction_vein_request_id else {
+            return;
+        };
+
+        let Some(response) = self.hub.take_response(request_id) else {
+            return;
+        };
+
+        self.instruction_vein_request_id = None;
+
+        let requested_target = self.instruction_vein_request_target.take();
+
+        match response {
+            ObservatoryResponseKind::InstructionVein { machine_id, batch } => {
+                /*
+                 * First validate the response against
+                 * the request that produced it.
+                 */
+                if requested_target.as_ref() != Some(&(machine_id.clone(), batch.pid)) {
+                    eprintln!("Observatory // Instruction Vein routing mismatch");
+
+                    return;
+                }
+
+                let Some(target) = self.instruction_vein_target.clone() else {
+                    return;
+                };
+
+                /*
+                 * The user might have selected another
+                 * process while this request was flying
+                 * across the network.
+                 *
+                 * A stale response is harmless. Drop it.
+                 */
+                if target.machine_id != machine_id || target.pid != batch.pid {
+                    return;
+                }
+
+                let newest_perf_time = batch
+                    .samples
+                    .iter()
+                    .map(|sample| sample.perf_time)
+                    .max()
+                    .unwrap_or(0);
+
+                let mut converted = Vec::with_capacity(batch.samples.len());
+
+                for sample in batch.samples {
+                    let mut assembly = sample.instruction.splitn(2, char::is_whitespace);
+
+                    let mnemonic = assembly.next().unwrap_or_default().to_string();
+
+                    let operands = assembly.next().unwrap_or_default().trim().to_string();
+
+                    let sequence = self.instruction_vein_next_sequence;
+
+                    self.instruction_vein_next_sequence =
+                        self.instruction_vein_next_sequence.wrapping_add(1).max(1);
+
+                    let age_seconds =
+                        newest_perf_time.saturating_sub(sample.perf_time) as f64 / 1_000_000_000.0;
+
+                    converted.push(InstructionSample {
+                        sequence,
+
+                        age_seconds: age_seconds as f32,
+
+                        /*
+                         * The current Vein samples
+                         * host CPU execution.
+                         */
+                        component: ComponentId::Cpu,
+
+                        truth: TruthLevel::Sampled,
+
+                        pid: sample.pid,
+
+                        tid: sample.tid,
+
+                        process_name: target.process_name.clone(),
+
+                        cpu_id: Some(sample.cpu as usize),
+
+                        architecture: InstructionArchitecture::X86_64,
+
+                        address: sample.ip,
+
+                        bytes: sample.bytes,
+
+                        mnemonic,
+
+                        operands,
+
+                        note: Some(
+                            "live Linux perf sample // process_vm_readv // iced-x86".to_string(),
+                        ),
+                    });
+                }
+
+                /*
+                 * ProcessInstructionSampler returns
+                 * chronological order.
+                 *
+                 * The UI expects newest first.
+                 */
+                converted.reverse();
+
+                /*
+                 * New batch first, older retained
+                 * samples afterward.
+                 */
+                converted.append(&mut self.instruction_vein_samples);
+
+                converted.truncate(INSTRUCTION_VEIN_BUFFER_SIZE);
+
+                self.instruction_vein_samples = converted;
+            }
+
+            ObservatoryResponseKind::Error { code, message } => {
+                eprintln!("Observatory // Instruction Vein // {code} // {message}");
+            }
+
+            ObservatoryResponseKind::ProcessMemoryMap { .. } => {
+                eprintln!(
+                    "Observatory // received memory-map response for Instruction Vein request"
+                );
+            }
+        }
+    }
 }
 
 fn color_row(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) -> bool {
@@ -1176,16 +1635,20 @@ fn nav_group(ui: &mut egui::Ui, current: &mut View, label: &str, views: &[View])
 
 impl eframe::App for ObservatoryApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_process_memory_map_response();
+
+        self.poll_instruction_vein_response();
+
         if !self.paused {
             self.local_snapshot = self.source.poll(self.elapsed());
 
-            let live_fleet = self.hub.poll();
-
-            self.fleet = live_fleet;
+            self.fleet = self.hub.poll();
 
             self.sync_selected_snapshot();
 
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            self.maybe_request_instruction_vein();
+
+            ctx.request_repaint_after(Duration::from_millis(16));
         }
     }
 
@@ -1207,7 +1670,7 @@ impl eframe::App for ObservatoryApp {
             .or_else(|| self.fleet.first_online().cloned());
 
         let central = egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(theme::bg()).inner_margin(14.0))
+            .frame(egui::Frame::new().fill(theme::bg()).inner_margin(18.0))
             .show(root, |ui| {
                 let view = self.view;
 

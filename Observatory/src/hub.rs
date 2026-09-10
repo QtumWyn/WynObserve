@@ -1,12 +1,19 @@
 use std::{
-    io::{BufRead, BufReader},
+    collections::HashMap,
+    io::{BufRead, BufReader, ErrorKind, Write},
     net::TcpStream,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, Receiver, Sender, TryRecvError},
+    },
     thread,
     time::Duration,
 };
 
-use wyn_protocol::{FleetMachineState, HubMessage, MachineStatus, PROTOCOL_VERSION};
+use wyn_protocol::{
+    FleetMachineState, HubMessage, MachineStatus, ObservatoryRequest, ObservatoryRequestKind,
+    ObservatoryResponseKind, PROTOCOL_VERSION,
+};
 
 use crate::{
     fleet::{CpuPackageTopology, FleetMachine, FleetState, MachineOrigin},
@@ -14,10 +21,14 @@ use crate::{
 };
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(1);
+const IO_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 pub struct HubFleetClient {
     latest: Arc<Mutex<Option<FleetState>>>,
     current: FleetState,
+    request_tx: Sender<ObservatoryRequest>,
+    responses: Arc<Mutex<HashMap<u64, ObservatoryResponseKind>>>,
+    next_request_id: u64,
 }
 
 impl HubFleetClient {
@@ -26,10 +37,16 @@ impl HubFleetClient {
 
         let latest = Arc::new(Mutex::new(None::<FleetState>));
 
+        let responses = Arc::new(Mutex::new(HashMap::new()));
+
+        let (request_tx, request_rx) = mpsc::channel();
+
         let reader_state = Arc::clone(&latest);
 
+        let reader_responses = Arc::clone(&responses);
+
         thread::spawn(move || {
-            reader_loop(endpoint, reader_state);
+            connection_loop(endpoint, reader_state, reader_responses, request_rx);
         });
 
         Self {
@@ -38,6 +55,12 @@ impl HubFleetClient {
             current: FleetState {
                 machines: Vec::new(),
             },
+
+            request_tx,
+
+            responses,
+
+            next_request_id: 1,
         }
     }
 
@@ -57,15 +80,93 @@ impl HubFleetClient {
 
         self.current.clone()
     }
+
+    pub fn request_process_memory_map(
+        &mut self,
+        machine_id: &str,
+        pid: u32,
+        expected_started_at_unix_ms: Option<u64>,
+    ) -> Result<u64, String> {
+        let request_id = self.next_request_id;
+
+        self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
+
+        let request = ObservatoryRequest {
+            protocol_version: PROTOCOL_VERSION,
+
+            request_id,
+
+            request: ObservatoryRequestKind::ProcessMemoryMap {
+                machine_id: machine_id.to_string(),
+
+                pid,
+
+                expected_started_at_unix_ms,
+            },
+        };
+
+        self.request_tx
+            .send(request)
+            .map_err(|error| format!("could not queue Hub request: {error}"))?;
+
+        Ok(request_id)
+    }
+
+    pub fn request_instruction_vein_sample(
+        &mut self,
+        machine_id: &str,
+        pid: u32,
+        expected_started_at_unix_ms: Option<u64>,
+    ) -> Result<u64, String> {
+        let request_id = self.next_request_id;
+
+        self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
+
+        let request = ObservatoryRequest {
+            protocol_version: PROTOCOL_VERSION,
+
+            request_id,
+
+            request: ObservatoryRequestKind::InstructionVeinSample {
+                machine_id: machine_id.to_string(),
+
+                pid,
+
+                expected_started_at_unix_ms,
+            },
+        };
+
+        self.request_tx
+            .send(request)
+            .map_err(|error| format!("could not queue Hub request: {error}"))?;
+
+        Ok(request_id)
+    }
+
+    pub fn take_response(&self, request_id: u64) -> Option<ObservatoryResponseKind> {
+        self.responses
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&request_id)
+    }
 }
 
-fn reader_loop(endpoint: String, latest: Arc<Mutex<Option<FleetState>>>) {
+fn connection_loop(
+    endpoint: String,
+
+    latest: Arc<Mutex<Option<FleetState>>>,
+
+    responses: Arc<Mutex<HashMap<u64, ObservatoryResponseKind>>>,
+
+    request_rx: Receiver<ObservatoryRequest>,
+) {
     loop {
         match TcpStream::connect(&endpoint) {
             Ok(stream) => {
                 eprintln!("Observatory // connected to Fleet Hub at {endpoint}");
 
-                if let Err(error) = read_stream(stream, &latest, &endpoint) {
+                if let Err(error) = run_session(stream, &latest, &responses, &request_rx, &endpoint)
+                {
                     eprintln!("Observatory // Fleet Hub connection lost: {error}");
                 }
             }
@@ -80,51 +181,143 @@ fn reader_loop(endpoint: String, latest: Arc<Mutex<Option<FleetState>>>) {
     }
 }
 
-fn read_stream(
-    stream: TcpStream,
+fn run_session(
+    mut write_stream: TcpStream,
+
     latest: &Arc<Mutex<Option<FleetState>>>,
+
+    responses: &Arc<Mutex<HashMap<u64, ObservatoryResponseKind>>>,
+
+    request_rx: &Receiver<ObservatoryRequest>,
+
     endpoint: &str,
 ) -> std::io::Result<()> {
-    let reader = BufReader::new(stream);
+    let read_stream = write_stream.try_clone()?;
 
-    for line in reader.lines() {
-        let line = line?;
+    read_stream.set_read_timeout(Some(IO_POLL_INTERVAL))?;
 
-        if line.trim().is_empty() {
-            continue;
-        }
+    let mut reader = BufReader::new(read_stream);
 
-        match serde_json::from_str::<HubMessage>(&line) {
-            Ok(HubMessage::FleetSnapshot {
-                protocol_version,
-                generated_at_unix_ms: _,
-                machines,
-            }) => {
-                if protocol_version != PROTOCOL_VERSION {
-                    eprintln!(
-                        "Observatory // unsupported Hub protocol {}",
-                        protocol_version
-                    );
+    let mut line = String::new();
 
+    loop {
+        drain_requests(&mut write_stream, request_rx)?;
+
+        line.clear();
+
+        match reader.read_line(&mut line) {
+            Ok(0) => {
+                return Err(std::io::Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "Fleet Hub closed connection",
+                ));
+            }
+
+            Ok(_) => {
+                if line.trim().is_empty() {
                     continue;
                 }
 
-                let fleet = convert_fleet(machines, endpoint);
+                handle_hub_message(&line, latest, responses, endpoint);
+            }
 
-                let mut guard = latest
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-                *guard = Some(fleet);
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                continue;
             }
 
             Err(error) => {
-                eprintln!("Observatory // invalid Hub packet: {error}");
+                return Err(error);
             }
         }
     }
+}
 
-    Ok(())
+fn drain_requests(
+    stream: &mut TcpStream,
+
+    request_rx: &Receiver<ObservatoryRequest>,
+) -> std::io::Result<()> {
+    loop {
+        match request_rx.try_recv() {
+            Ok(request) => {
+                let json = serde_json::to_string(&request).map_err(std::io::Error::other)?;
+
+                writeln!(stream, "{json}")?;
+
+                stream.flush()?;
+            }
+
+            Err(TryRecvError::Empty) => {
+                return Ok(());
+            }
+
+            Err(TryRecvError::Disconnected) => {
+                return Err(std::io::Error::new(
+                    ErrorKind::BrokenPipe,
+                    "Observatory request channel closed",
+                ));
+            }
+        }
+    }
+}
+
+fn handle_hub_message(
+    line: &str,
+
+    latest: &Arc<Mutex<Option<FleetState>>>,
+
+    responses: &Arc<Mutex<HashMap<u64, ObservatoryResponseKind>>>,
+
+    endpoint: &str,
+) {
+    match serde_json::from_str::<HubMessage>(line) {
+        Ok(HubMessage::FleetSnapshot {
+            protocol_version,
+            generated_at_unix_ms: _,
+            machines,
+        }) => {
+            if protocol_version != PROTOCOL_VERSION {
+                eprintln!(
+                    "Observatory // unsupported Hub protocol {}",
+                    protocol_version
+                );
+
+                return;
+            }
+
+            let fleet = convert_fleet(machines, endpoint);
+
+            let mut guard = latest
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+            *guard = Some(fleet);
+        }
+
+        Ok(HubMessage::Response {
+            protocol_version,
+            request_id,
+            response,
+        }) => {
+            if protocol_version != PROTOCOL_VERSION {
+                eprintln!(
+                    "Observatory // unsupported Hub response protocol {}",
+                    protocol_version
+                );
+
+                return;
+            }
+
+            responses
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .insert(request_id, response);
+        }
+
+        Err(error) => {
+            eprintln!("Observatory // invalid Hub packet: {error}");
+        }
+    }
 }
 
 fn convert_fleet(machines: Vec<FleetMachineState>, endpoint: &str) -> FleetState {
