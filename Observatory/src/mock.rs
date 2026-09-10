@@ -472,6 +472,11 @@ impl TelemetrySource for MockTelemetry {
                 io_in_progress: Self::wave(t, 0.8, 0.77, 0.0, 9.0) as u64,
                 average_queue_depth: Self::wave(t, 1.6, 0.49, 0.0, 4.8),
                 rates_available: true,
+                space_available: false,
+                mount_point: String::new(),
+                capacity_bytes: 0,
+                used_bytes: 0,
+                available_bytes: 0,
             },
             network: NetworkSnapshot {
                 available: true,

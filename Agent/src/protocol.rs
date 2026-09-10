@@ -144,6 +144,15 @@ pub fn to_wire(snapshot: &SystemSnapshot) -> wire::TelemetrySnapshot {
             average_queue_depth: snapshot.storage.average_queue_depth,
 
             rates_available: snapshot.storage.rates_available,
+            space_available: snapshot.storage.space_available,
+
+            mount_point: snapshot.storage.mount_point.clone(),
+
+            capacity_bytes: snapshot.storage.capacity_bytes,
+
+            used_bytes: snapshot.storage.used_bytes,
+
+            available_bytes: snapshot.storage.available_bytes,
         },
         network: wire::NetworkSnapshot {
             available: snapshot.network.available,

@@ -138,6 +138,14 @@ pub struct StorageSnapshot {
     pub average_queue_depth: f32,
 
     pub rates_available: bool,
+
+    pub space_available: bool,
+
+    pub mount_point: String,
+
+    pub capacity_bytes: u64,
+    pub used_bytes: u64,
+    pub available_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

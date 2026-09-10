@@ -194,6 +194,11 @@ fn disconnected_snapshot() -> SystemSnapshot {
             io_in_progress: 0,
             average_queue_depth: 0.0,
             rates_available: false,
+            space_available: false,
+            mount_point: String::new(),
+            capacity_bytes: 0,
+            used_bytes: 0,
+            available_bytes: 0,
         },
 
         network: NetworkSnapshot {

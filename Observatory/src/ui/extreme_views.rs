@@ -237,6 +237,52 @@ pub fn storage_io_view(
         "STORAGE I/O MICROSCOPE",
         "process → filesystem → block queue → NVMe surface for IOPS, latency and writeback",
     );
+    let storage = &machine.system.storage;
+
+    if storage.space_available {
+        card(
+            ui,
+            &format!("FILESYSTEM CAPACITY // {}", storage.mount_point),
+            |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "CAPACITY {}",
+                            format_bytes(storage.capacity_bytes),
+                        ))
+                        .monospace()
+                        .color(theme::white()),
+                    );
+
+                    ui.label(
+                        egui::RichText::new(format!("USED {}", format_bytes(storage.used_bytes),))
+                            .monospace()
+                            .color(theme::pink()),
+                    );
+
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "AVAILABLE {}",
+                            format_bytes(storage.available_bytes),
+                        ))
+                        .monospace()
+                        .color(theme::green()),
+                    );
+                });
+
+                let fraction = storage.used_bytes as f32 / storage.capacity_bytes.max(1) as f32;
+
+                bar(
+                    ui,
+                    fraction,
+                    &format!("{:.1}% filesystem used", fraction * 100.0,),
+                    theme::pink(),
+                );
+            },
+        );
+
+        ui.add_space(10.0);
+    }
 
     let data = ExtremeSnapshot::mock(machine, fleet, elapsed);
 

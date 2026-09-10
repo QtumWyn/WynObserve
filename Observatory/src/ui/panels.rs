@@ -320,6 +320,47 @@ pub fn inspector(
                 },
                 theme::violet(),
             );
+            if snapshot.storage.space_available {
+                metric(
+                    ui,
+                    "CAPACITY",
+                    format_bytes(snapshot.storage.capacity_bytes),
+                    theme::white(),
+                );
+
+                ui.columns(2, |columns| {
+                    metric(
+                        &mut columns[0],
+                        "USED",
+                        format_bytes(snapshot.storage.used_bytes),
+                        theme::pink(),
+                    );
+
+                    metric(
+                        &mut columns[1],
+                        "AVAILABLE",
+                        format_bytes(snapshot.storage.available_bytes),
+                        theme::green(),
+                    );
+                });
+
+                let used_fraction = if snapshot.storage.capacity_bytes > 0 {
+                    snapshot.storage.used_bytes as f32 / snapshot.storage.capacity_bytes as f32
+                } else {
+                    0.0
+                };
+
+                progress(
+                    ui,
+                    used_fraction,
+                    &format!(
+                        "{:.1}% used // {}",
+                        used_fraction * 100.0,
+                        snapshot.storage.mount_point,
+                    ),
+                    theme::pink(),
+                );
+            }
             metric(
                 ui,
                 "THROUGHPUT",

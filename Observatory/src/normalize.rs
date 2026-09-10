@@ -132,6 +132,15 @@ pub fn telemetry_to_system(wire: TelemetrySnapshot) -> SystemSnapshot {
             io_in_progress: wire.storage.io_in_progress,
             average_queue_depth: wire.storage.average_queue_depth,
             rates_available: wire.storage.rates_available,
+            space_available: wire.storage.space_available,
+
+            mount_point: wire.storage.mount_point,
+
+            capacity_bytes: wire.storage.capacity_bytes,
+
+            used_bytes: wire.storage.used_bytes,
+
+            available_bytes: wire.storage.available_bytes,
         },
 
         network: NetworkSnapshot {

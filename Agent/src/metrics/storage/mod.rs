@@ -22,6 +22,20 @@ pub struct StorageSnapshot {
     pub device: String,
     pub model: String,
 
+    /*
+     * Filesystem capacity telemetry.
+     *
+     * For now this represents the root
+     * filesystem mounted at "/".
+     */
+    pub space_available: bool,
+
+    pub mount_point: String,
+
+    pub capacity_bytes: u64,
+    pub used_bytes: u64,
+    pub available_bytes: u64,
+
     pub read_mib_s: f32,
     pub write_mib_s: f32,
 

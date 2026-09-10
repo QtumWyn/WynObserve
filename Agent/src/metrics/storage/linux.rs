@@ -1,4 +1,4 @@
-use std::{fs, io, time::Instant};
+use std::{ffi::CString, fs, io, mem::MaybeUninit, time::Instant};
 
 use super::StorageSnapshot;
 
@@ -56,6 +56,20 @@ impl PlatformStorageCollector {
         };
 
         let model = read_model(&device).unwrap_or_else(|| device.clone());
+
+        let filesystem_space = read_filesystem_space("/").ok();
+
+        let (space_available, capacity_bytes, used_bytes, available_bytes) = match filesystem_space
+        {
+            Some(space) => (
+                true,
+                space.capacity_bytes,
+                space.used_bytes,
+                space.available_bytes,
+            ),
+
+            None => (false, 0, 0, 0),
+        };
 
         let now = Instant::now();
 
@@ -141,6 +155,14 @@ impl PlatformStorageCollector {
 
             device,
             model,
+
+            space_available,
+
+            mount_point: "/".to_string(),
+
+            capacity_bytes,
+            used_bytes,
+            available_bytes,
 
             read_mib_s,
             write_mib_s,
@@ -257,5 +279,61 @@ fn unavailable_snapshot() -> StorageSnapshot {
         average_queue_depth: 0.0,
 
         rates_available: false,
+
+        space_available: false,
+
+        mount_point: String::new(),
+
+        capacity_bytes: 0,
+        used_bytes: 0,
+        available_bytes: 0,
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FilesystemSpace {
+    capacity_bytes: u64,
+    used_bytes: u64,
+    available_bytes: u64,
+}
+
+fn read_filesystem_space(mount_point: &str) -> io::Result<FilesystemSpace> {
+    let path = CString::new(mount_point)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+
+    let mut stats = MaybeUninit::<libc::statvfs>::uninit();
+
+    let result = unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) };
+
+    if result != 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    let stats = unsafe { stats.assume_init() };
+
+    let block_size = if stats.f_frsize > 0 {
+        stats.f_frsize as u64
+    } else {
+        stats.f_bsize as u64
+    };
+
+    let capacity_bytes = (stats.f_blocks as u64).saturating_mul(block_size);
+
+    let available_bytes = (stats.f_bavail as u64).saturating_mul(block_size);
+
+    /*
+     * Treat filesystem-reserved space as
+     * unavailable for our dashboard.
+     *
+     * This intentionally gives us:
+     *
+     * used + available == capacity
+     */
+    let used_bytes = capacity_bytes.saturating_sub(available_bytes);
+
+    Ok(FilesystemSpace {
+        capacity_bytes,
+        used_bytes,
+        available_bytes,
+    })
 }
