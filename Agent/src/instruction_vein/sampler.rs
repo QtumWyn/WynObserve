@@ -140,6 +140,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
+    #[ignore = "requires Linux perf_event permissions or CAP_PERFMON"]
     fn sampler_produces_decoded_instructions() {
         let tid = unsafe { libc::syscall(libc::SYS_gettid) } as u32;
 
@@ -189,6 +190,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires Linux perf_event permissions or CAP_PERFMON"]
     fn samples_specific_thread() {
         use std::{
             sync::{

@@ -174,6 +174,7 @@ mod tests {
     };
 
     #[test]
+    #[ignore = "requires Linux perf_event permissions or CAP_PERFMON"]
     fn samples_whole_process() {
         let running = Arc::new(AtomicBool::new(true));
 

@@ -300,6 +300,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires Linux perf_event permissions or CAP_PERFMON"]
     fn opens_perf_event() {
         let fd = open_probe_for_tid(current_tid()).expect("failed to open perf event");
 
@@ -309,6 +310,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires Linux perf_event permissions or CAP_PERFMON"]
     fn perf_ring_receives_data() {
         let buffer = map_probe_for_tid(current_tid()).expect("failed to map perf buffer");
 
@@ -338,6 +340,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires Linux perf_event permissions or CAP_PERFMON"]
     fn captures_real_instruction_sample() {
         let mut buffer = map_probe_for_tid(current_tid()).expect("failed to map perf buffer");
 
