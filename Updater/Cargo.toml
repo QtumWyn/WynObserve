@@ -1,0 +1,32 @@
+[package]
+name = "wyn-updater"
+version = "0.1.0"
+edition = "2024"
+description = "Secure updater for WynObserve components"
+license = "MPL-2.0"
+default-run = "wyn-update"
+
+[[bin]]
+name = "wyn-update"
+path = "src/main.rs"
+
+[[bin]]
+name = "wyn-update-helper"
+path = "src/helper.rs"
+
+[dependencies]
+libc = "0.2"
+reqwest = { version = "0.13", features = ["blocking", "json"] }
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+
+[package.metadata.deb]
+name = "wyn-updater"
+maintainer = "QtumWyn <Qtummechanic25@gmail.com>"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/wyn-update", "usr/bin/wyn-update", "755"],
+    ["target/release/wyn-update-helper", "usr/libexec/wynobserve/wyn-update-helper", "755"],
+]
