@@ -11,6 +11,21 @@ use std::{env, error::Error, io, process};
 use component::Component;
 use download::VerifiedPackage;
 use plan::{ComponentPlan, UpdateState};
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct JsonComponent {
+    name: String,
+    installed: Option<String>,
+    latest: Option<String>,
+    status: String,
+}
+
+#[derive(Serialize)]
+struct JsonStatus {
+    components: Vec<JsonComponent>,
+    updates_available: usize,
+}
 
 #[derive(Debug, Default)]
 struct Options {
@@ -18,6 +33,7 @@ struct Options {
     install: bool,
     force: bool,
     yes: bool,
+    json: bool,
 }
 
 fn main() {
@@ -46,6 +62,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         println!();
 
         plans.push(plan);
+    }
+
+    if options.json {
+        print_json(&plans)?;
+
+        return Ok(());
     }
 
     print_summary(&plans);
@@ -215,6 +237,10 @@ fn parse_options() -> Result<Options, Box<dyn Error>> {
                 process::exit(0);
             }
 
+            "--json" => {
+                options.json = true;
+            }
+
             unknown => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -255,6 +281,7 @@ fn print_help() {
          \x20 --download  Download and verify available updates\n\
          \x20 --install   Download, verify, and install updates\n\
          \x20 --force     Include already-current releases\n\
+         \x20 --json        Output machine-readable JSON\n\
          \x20 -V, --version  Show updater version\n\
          \x20 -y, --yes   Install without confirmation\n\
          \x20 -h, --help  Show this help"
@@ -276,4 +303,59 @@ fn confirm_install(package_count: usize) -> Result<bool, Box<dyn Error>> {
         response.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"
     ))
+}
+
+fn print_json(plans: &[ComponentPlan]) -> Result<(), Box<dyn Error>> {
+    let components = plans
+        .iter()
+        .map(|plan| {
+            let (installed, latest, status) = match &plan.state {
+                UpdateState::NotInstalled => (
+                    None,
+                    plan.release
+                        .as_ref()
+                        .map(|release| release.version.to_string()),
+                    "not_installed",
+                ),
+
+                UpdateState::Current { version } => (
+                    Some(version.to_string()),
+                    plan.release
+                        .as_ref()
+                        .map(|release| release.version.to_string()),
+                    "current",
+                ),
+
+                UpdateState::UpdateAvailable { installed, latest } => (
+                    Some(installed.to_string()),
+                    Some(latest.to_string()),
+                    "update_available",
+                ),
+            };
+
+            JsonComponent {
+                name: plan.component.display_name().to_string(),
+
+                installed,
+
+                latest,
+
+                status: status.to_string(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let updates_available = components
+        .iter()
+        .filter(|component| component.status == "update_available")
+        .count();
+
+    let output = JsonStatus {
+        components,
+        updates_available,
+    };
+
+    println!("{}", serde_json::to_string_pretty(&output,)?);
+
+    Ok(())
 }

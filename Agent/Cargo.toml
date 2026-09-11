@@ -26,6 +26,7 @@ cc = "1"
 
 [package.metadata.deb]
 name = "wyncommand-agent"
+maintainer = "QtumWyn <Qtummechanic25@gmail.com>"
 section = "utils"
 priority = "optional"
 depends = "$auto"
