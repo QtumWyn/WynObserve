@@ -265,7 +265,7 @@ fn validate_source(source: &Path) -> io::Result<PathBuf> {
 
 fn ensure_allowed_package(package_name: &str) -> io::Result<()> {
     match package_name {
-        "wyncommand-agent" | "wynobserve" => Ok(()),
+        "wyncommand-agent" | "wynobserve" | "wyn-updater" => Ok(()),
 
         _ => Err(io::Error::new(
             io::ErrorKind::PermissionDenied,

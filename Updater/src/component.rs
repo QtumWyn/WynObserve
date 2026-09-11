@@ -4,15 +4,17 @@ use std::fmt;
 pub enum Component {
     Agent,
     Observatory,
+    Updater,
 }
 
 impl Component {
-    pub const ALL: [Self; 2] = [Self::Agent, Self::Observatory];
+    pub const ALL: [Self; 3] = [Self::Agent, Self::Observatory, Self::Updater];
 
     pub fn display_name(self) -> &'static str {
         match self {
             Self::Agent => "Agent",
             Self::Observatory => "Observatory",
+            Self::Updater => "Updater",
         }
     }
 
@@ -20,6 +22,7 @@ impl Component {
         match self {
             Self::Agent => "wyncommand-agent",
             Self::Observatory => "wynobserve",
+            Self::Updater => "wyn-updater",
         }
     }
 
@@ -27,6 +30,7 @@ impl Component {
         match self {
             Self::Agent => "agent-v",
             Self::Observatory => "observatory-v",
+            Self::Updater => "updater-v",
         }
     }
 }
