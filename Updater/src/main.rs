@@ -209,6 +209,12 @@ fn parse_options() -> Result<Options, Box<dyn Error>> {
                 options.yes = true;
             }
 
+            "--version" | "-V" => {
+                println!("wyn-update {}", env!("CARGO_PKG_VERSION"),);
+
+                process::exit(0);
+            }
+
             unknown => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -249,6 +255,7 @@ fn print_help() {
          \x20 --download  Download and verify available updates\n\
          \x20 --install   Download, verify, and install updates\n\
          \x20 --force     Include already-current releases\n\
+         \x20 -V, --version  Show updater version\n\
          \x20 -y, --yes   Install without confirmation\n\
          \x20 -h, --help  Show this help"
     );
