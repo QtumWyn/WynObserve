@@ -1,10 +1,133 @@
-use eframe::egui::{self, Color32, Id, LayerId, Order, Painter, Pos2, Rect, Shape, Stroke, vec2};
+use eframe::egui::{
+    self, Align2, Color32, CursorIcon, FontId, Id, LayerId, Order, Painter, Pos2, Rect, Sense,
+    Shape, Stroke, Vec2, vec2,
+};
 
 use crate::{
     config::UiPreferences,
     model::{ComponentId, SystemSnapshot},
     theme,
 };
+
+#[derive(Debug, Clone, Copy)]
+enum FamiliarKind {
+    Cat,
+    Bat,
+    Bunny,
+    Puppy,
+}
+
+impl FamiliarKind {
+    fn key(self) -> &'static str {
+        match self {
+            Self::Cat => "cat",
+            Self::Bat => "bat",
+            Self::Bunny => "bunny",
+            Self::Puppy => "puppy",
+        }
+    }
+
+    fn chase_window(self) -> (f32, f32, f32) {
+        match self {
+            Self::Cat => (17.0, 5.0, 7.0),
+            Self::Bat => (13.0, 4.0, 8.0),
+            Self::Bunny => (19.0, 5.0, 10.0),
+            Self::Puppy => (11.0, 6.0, 6.0),
+        }
+    }
+
+    fn sleep_window(self) -> (f32, f32, f32) {
+        match self {
+            Self::Cat => (47.0, 6.5, 11.0),
+            Self::Bat => (53.0, 7.0, 19.0),
+            Self::Bunny => (43.0, 6.0, 8.0),
+            Self::Puppy => (58.0, 8.0, 22.0),
+        }
+    }
+
+    fn responsiveness(self, chasing: bool, sleeping: bool) -> (f32, f32, f32) {
+        if sleeping {
+            return (10.0, 11.0, 90.0);
+        }
+
+        match (self, chasing) {
+            (Self::Cat, true) => (26.0, 8.0, 460.0),
+            (Self::Bat, true) => (31.0, 7.0, 620.0),
+            (Self::Bunny, true) => (23.0, 8.5, 430.0),
+            (Self::Puppy, true) => (30.0, 8.5, 520.0),
+            (Self::Cat, false) => (14.0, 9.5, 260.0),
+            (Self::Bat, false) => (17.0, 7.5, 360.0),
+            (Self::Bunny, false) => (15.0, 10.0, 300.0),
+            (Self::Puppy, false) => (18.0, 9.5, 340.0),
+        }
+    }
+
+    fn hitbox(self, position: Pos2, size: f32) -> Rect {
+        let dimensions = match self {
+            Self::Bat => vec2(size * 2.25, size * 1.45),
+            _ => vec2(size * 1.95, size * 1.75),
+        };
+
+        Rect::from_center_size(position, dimensions)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FamiliarState {
+    initialized: bool,
+    position: Pos2,
+    velocity: Vec2,
+    feed_started_at: f32,
+    fed_until: f32,
+    sleep_anchor: Pos2,
+    sleep_pose_time: f32,
+    was_sleeping: bool,
+}
+
+impl Default for FamiliarState {
+    fn default() -> Self {
+        Self {
+            initialized: false,
+            position: Pos2::new(0.0, 0.0),
+            velocity: Vec2::ZERO,
+            feed_started_at: -1000.0,
+            fed_until: -1000.0,
+            sleep_anchor: Pos2::new(0.0, 0.0),
+            sleep_pose_time: 0.0,
+            was_sleeping: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct FamiliarMemory {
+    cat: FamiliarState,
+    bat: FamiliarState,
+    bunny: FamiliarState,
+    puppy: FamiliarState,
+}
+
+impl FamiliarMemory {
+    fn state_mut(&mut self, kind: FamiliarKind) -> &mut FamiliarState {
+        match kind {
+            FamiliarKind::Cat => &mut self.cat,
+            FamiliarKind::Bat => &mut self.bat,
+            FamiliarKind::Bunny => &mut self.bunny,
+            FamiliarKind::Puppy => &mut self.puppy,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FamiliarFrame {
+    position: Pos2,
+    pose_time: f32,
+    sleeping: bool,
+    fed: bool,
+    hovered: bool,
+    chasing: bool,
+    feed_age: f32,
+}
 
 /// Draw the selected familiars over the central Observatory workspace.
 ///
@@ -42,6 +165,10 @@ pub fn draw_familiars(
         return;
     }
 
+    // These are living UI decorations now, so keep the animation clock ticking
+    // even when the rest of the dashboard has nothing new to paint.
+    ctx.request_repaint();
+
     let layer = LayerId::new(Order::Foreground, Id::new("observatory_familiar_layer"));
 
     let painter = ctx
@@ -57,7 +184,6 @@ pub fn draw_familiars(
         snapshot.memory.used_bytes as f32 / snapshot.memory.total_bytes.max(1) as f32;
 
     let cat_time = elapsed * (1.0 + network_burst * 1.8);
-
     let bat_time = elapsed * if thermal_alert { 1.8 } else { 1.0 };
 
     let bunny_time = if incident_active {
@@ -68,46 +194,332 @@ pub fn draw_familiars(
 
     let puppy_time = if fleet_has_offline { 0.0 } else { elapsed };
 
-    // Much larger than the first version.
     const CAT_SIZE: f32 = 31.0;
     const BAT_SIZE: f32 = 27.0;
     const BUNNY_SIZE: f32 = 29.0;
     const PUPPY_SIZE: f32 = 31.0;
 
+    let memory_id = Id::new("observatory_familiar_interaction_memory");
+    let mut memory = ctx.data(|data| {
+        data.get_temp::<FamiliarMemory>(memory_id)
+            .unwrap_or_default()
+    });
+
+    let pointer = ctx.input(|input| input.pointer.hover_pos());
+    let dt = ctx
+        .input(|input| input.stable_dt)
+        .clamp(1.0 / 240.0, 1.0 / 20.0);
+
     if preferences.catgirl {
-        let mut pos = cat_position(rect, cat_time);
+        let mut target = cat_position(rect, cat_time);
 
         if selected == ComponentId::Network {
-            pos.y -= 18.0;
+            target.y -= 18.0;
         }
 
-        draw_cat(&painter, pos, CAT_SIZE, cat_time);
+        let frame = update_familiar(
+            ctx,
+            rect,
+            FamiliarKind::Cat,
+            memory.state_mut(FamiliarKind::Cat),
+            target,
+            CAT_SIZE,
+            elapsed,
+            cat_time,
+            dt,
+            pointer,
+            true,
+            true,
+        );
+
+        draw_cat(&painter, frame.position, CAT_SIZE, frame.pose_time);
+        draw_interaction_effects(&painter, FamiliarKind::Cat, frame, CAT_SIZE, theme::pink());
     }
 
     if preferences.batgirl {
-        let pos = bat_position(rect, bat_time);
-        draw_bat(&painter, pos, BAT_SIZE, bat_time);
+        let frame = update_familiar(
+            ctx,
+            rect,
+            FamiliarKind::Bat,
+            memory.state_mut(FamiliarKind::Bat),
+            bat_position(rect, bat_time),
+            BAT_SIZE,
+            elapsed,
+            bat_time,
+            dt,
+            pointer,
+            !thermal_alert,
+            !thermal_alert,
+        );
+
+        draw_bat(&painter, frame.position, BAT_SIZE, frame.pose_time);
+        draw_interaction_effects(
+            &painter,
+            FamiliarKind::Bat,
+            frame,
+            BAT_SIZE,
+            theme::violet(),
+        );
     }
 
     if preferences.bunnygirl {
-        let pos = if incident_active {
+        let target = if incident_active {
             Pos2::new(rect.right() - 105.0, rect.bottom() - 62.0)
         } else {
             bunny_position(rect, bunny_time)
         };
 
-        draw_bunny(&painter, pos, BUNNY_SIZE, bunny_time);
+        let frame = update_familiar(
+            ctx,
+            rect,
+            FamiliarKind::Bunny,
+            memory.state_mut(FamiliarKind::Bunny),
+            target,
+            BUNNY_SIZE,
+            elapsed,
+            bunny_time,
+            dt,
+            pointer,
+            !incident_active,
+            !incident_active,
+        );
+
+        draw_bunny(&painter, frame.position, BUNNY_SIZE, frame.pose_time);
+        draw_interaction_effects(
+            &painter,
+            FamiliarKind::Bunny,
+            frame,
+            BUNNY_SIZE,
+            theme::blue(),
+        );
     }
 
     if preferences.puppygirl {
-        let pos = if fleet_has_offline {
+        let target = if fleet_has_offline {
             Pos2::new(rect.left() + 92.0, rect.bottom() - 52.0)
         } else {
             puppy_position(rect, puppy_time)
         };
 
-        draw_puppy(&painter, pos, PUPPY_SIZE, puppy_time);
+        let frame = update_familiar(
+            ctx,
+            rect,
+            FamiliarKind::Puppy,
+            memory.state_mut(FamiliarKind::Puppy),
+            target,
+            PUPPY_SIZE,
+            elapsed,
+            puppy_time,
+            dt,
+            pointer,
+            !fleet_has_offline,
+            !fleet_has_offline,
+        );
+
+        draw_puppy(&painter, frame.position, PUPPY_SIZE, frame.pose_time);
+        draw_interaction_effects(
+            &painter,
+            FamiliarKind::Puppy,
+            frame,
+            PUPPY_SIZE,
+            theme::gold(),
+        );
     }
+
+    ctx.data_mut(|data| data.insert_temp(memory_id, memory));
+}
+
+fn update_familiar(
+    ctx: &egui::Context,
+    rect: Rect,
+    kind: FamiliarKind,
+    state: &mut FamiliarState,
+    base_target: Pos2,
+    size: f32,
+    elapsed: f32,
+    pose_time: f32,
+    dt: f32,
+    pointer: Option<Pos2>,
+    chase_allowed: bool,
+    sleep_allowed: bool,
+) -> FamiliarFrame {
+    let base_target = clamp_position(rect, base_target, size * 1.45);
+
+    if !state.initialized {
+        state.initialized = true;
+        state.position = base_target;
+        state.sleep_anchor = base_target;
+    }
+
+    let current_hitbox = kind.hitbox(state.position, size);
+    let pointer_inside_workspace = pointer.is_some_and(|position| rect.contains(position));
+    let hovered_before_move = pointer.is_some_and(|position| current_hitbox.contains(position));
+    let fed_before_click = elapsed < state.fed_until;
+
+    let (chase_period, chase_duration, chase_phase) = kind.chase_window();
+    let chase_strength =
+        if chase_allowed && pointer_inside_workspace && !fed_before_click && !hovered_before_move {
+            activity_envelope(elapsed, chase_period, chase_duration, chase_phase)
+        } else {
+            0.0
+        };
+
+    let chasing = chase_strength > 0.04;
+
+    let (sleep_period, sleep_duration, sleep_phase) = kind.sleep_window();
+    let wants_sleep = sleep_allowed
+        && !fed_before_click
+        && !hovered_before_move
+        && !chasing
+        && activity_envelope(elapsed, sleep_period, sleep_duration, sleep_phase) > 0.55;
+
+    if wants_sleep && !state.was_sleeping {
+        state.sleep_anchor = sleep_target(kind, rect, state.position);
+        state.sleep_pose_time = pose_time;
+        state.velocity = Vec2::ZERO;
+    }
+
+    if !wants_sleep && state.was_sleeping {
+        // A tiny wake-up twitch keeps waking from looking like a teleport from
+        // "frozen" to "moving".
+        state.velocity.y -= if matches!(kind, FamiliarKind::Bat) {
+            28.0
+        } else {
+            18.0
+        };
+    }
+
+    state.was_sleeping = wants_sleep;
+
+    let mut target = if wants_sleep {
+        state.sleep_anchor
+    } else {
+        base_target
+    };
+
+    if chasing {
+        if let Some(cursor) = pointer {
+            let cursor_target = chase_target(kind, rect, base_target, cursor, size);
+            target = lerp_pos(target, cursor_target, chase_strength);
+        }
+    }
+
+    let (spring, damping, max_speed) = kind.responsiveness(chasing, wants_sleep);
+    spring_toward(state, target, dt, spring, damping, max_speed);
+
+    state.position = clamp_position(rect, state.position, size * 1.35);
+
+    let response = familiar_response(ctx, kind, kind.hitbox(state.position, size));
+    let clicked = response.clicked();
+    let hovered = response.hovered();
+
+    if clicked {
+        state.feed_started_at = elapsed;
+        state.fed_until = elapsed + 3.6;
+        state.was_sleeping = false;
+
+        // Every familiar has a slightly different "SNACK!" reaction.
+        state.velocity.y -= match kind {
+            FamiliarKind::Bat => 95.0,
+            FamiliarKind::Bunny => 150.0,
+            FamiliarKind::Cat => 82.0,
+            FamiliarKind::Puppy => 105.0,
+        };
+    }
+
+    let fed = elapsed < state.fed_until;
+    let sleeping = wants_sleep && !fed && !hovered;
+
+    FamiliarFrame {
+        position: state.position,
+        pose_time: if sleeping {
+            state.sleep_pose_time
+        } else {
+            pose_time
+        },
+        sleeping,
+        fed,
+        hovered,
+        chasing: chasing && !fed,
+        feed_age: elapsed - state.feed_started_at,
+    }
+}
+
+fn familiar_response(ctx: &egui::Context, kind: FamiliarKind, hitbox: Rect) -> egui::Response {
+    let response = egui::Area::new(Id::new(("observatory_familiar_hitbox", kind.key())))
+        .order(Order::Foreground)
+        .fixed_pos(hitbox.min)
+        .show(ctx, |ui| {
+            ui.allocate_response(hitbox.size(), Sense::click())
+        })
+        .inner;
+
+    response
+        .on_hover_cursor(CursorIcon::PointingHand)
+        .on_hover_text("Click to feed :3")
+}
+
+fn spring_toward(
+    state: &mut FamiliarState,
+    target: Pos2,
+    dt: f32,
+    spring: f32,
+    damping: f32,
+    max_speed: f32,
+) {
+    let displacement = target - state.position;
+    state.velocity += displacement * spring * dt;
+    state.velocity *= (-damping * dt).exp();
+
+    let speed = state.velocity.length();
+    if speed > max_speed {
+        state.velocity *= max_speed / speed;
+    }
+
+    state.position += state.velocity * dt;
+}
+
+fn chase_target(kind: FamiliarKind, rect: Rect, base: Pos2, cursor: Pos2, size: f32) -> Pos2 {
+    let target = match kind {
+        FamiliarKind::Bat => cursor + vec2(0.0, -size * 0.55),
+        FamiliarKind::Cat => {
+            let lift = ((base.y - cursor.y).max(0.0) * 0.08).min(size * 0.65);
+            Pos2::new(cursor.x - size * 0.45, base.y - lift)
+        }
+        FamiliarKind::Bunny => Pos2::new(cursor.x + size * 0.30, base.y),
+        FamiliarKind::Puppy => Pos2::new(cursor.x - size * 0.20, base.y),
+    };
+
+    clamp_position(rect, target, size * 1.45)
+}
+
+fn sleep_target(kind: FamiliarKind, rect: Rect, current: Pos2) -> Pos2 {
+    let target = match kind {
+        FamiliarKind::Cat => Pos2::new(current.x, rect.bottom() - 54.0),
+        FamiliarKind::Bat => Pos2::new(rect.right() - 92.0, rect.top() + 78.0),
+        FamiliarKind::Bunny => Pos2::new(current.x, rect.bottom() - 60.0),
+        FamiliarKind::Puppy => Pos2::new(current.x, rect.bottom() - 50.0),
+    };
+
+    clamp_position(rect, target, 44.0)
+}
+
+fn activity_envelope(t: f32, period: f32, duration: f32, phase: f32) -> f32 {
+    let local = (t + phase).rem_euclid(period);
+
+    if local >= duration {
+        return 0.0;
+    }
+
+    let fade = 0.85_f32.min(duration * 0.35);
+    let fade_in = smoothstep((local / fade).clamp(0.0, 1.0));
+    let fade_out = smoothstep(((duration - local) / fade).clamp(0.0, 1.0));
+
+    fade_in * fade_out
+}
+
+fn lerp_pos(a: Pos2, b: Pos2, t: f32) -> Pos2 {
+    Pos2::new(lerp_f32(a.x, b.x, t), lerp_f32(a.y, b.y, t))
 }
 
 // -----------------------------------------------------------------------------
@@ -664,6 +1076,194 @@ fn draw_puppy(painter: &Painter, origin: Pos2, size: f32, elapsed: f32) {
     );
 
     painter.circle_filled(head + vec2(size * 0.01, size * 0.23), 2.0, theme::blue());
+}
+
+// -----------------------------------------------------------------------------
+// Interaction overlays
+// -----------------------------------------------------------------------------
+
+fn draw_interaction_effects(
+    painter: &Painter,
+    kind: FamiliarKind,
+    frame: FamiliarFrame,
+    size: f32,
+    accent: Color32,
+) {
+    if frame.hovered {
+        let pulse = 0.5 + 0.5 * (frame.pose_time * 5.0).sin();
+        painter.circle_stroke(
+            frame.position,
+            size * (0.72 + pulse * 0.05),
+            Stroke::new(1.2, tint(accent, 0.58)),
+        );
+    }
+
+    if frame.chasing {
+        let streak = match kind {
+            FamiliarKind::Bat => size * 0.95,
+            _ => size * 0.62,
+        };
+
+        painter.line_segment(
+            [
+                frame.position + vec2(-streak, size * 0.10),
+                frame.position + vec2(-streak * 0.48, size * 0.04),
+            ],
+            Stroke::new(1.0, tint(accent, 0.34)),
+        );
+    }
+
+    if frame.sleeping {
+        draw_sleep_face(painter, kind, frame.position, size, frame.pose_time);
+        draw_sleep_marks(painter, frame.position, size, accent, frame.pose_time);
+    }
+
+    if frame.fed {
+        draw_feed_effect(
+            painter,
+            frame.position,
+            size,
+            frame.feed_age.max(0.0),
+            accent,
+        );
+    }
+}
+
+fn draw_sleep_face(painter: &Painter, kind: FamiliarKind, origin: Pos2, size: f32, pose_time: f32) {
+    let (head, eye_dx, eye_y, cover, line_color) = match kind {
+        FamiliarKind::Cat => {
+            let facing = if (pose_time * 0.095).fract() < 0.5 {
+                1.0
+            } else {
+                -1.0
+            };
+
+            (
+                origin + vec2(size * 0.50 * facing, -size * 0.18),
+                size * 0.085,
+                -size * 0.025,
+                tint(theme::pink(), 0.21),
+                theme::white(),
+            )
+        }
+        FamiliarKind::Bat => (
+            origin + vec2(0.0, -size * 0.12),
+            size * 0.055,
+            0.0,
+            tint(theme::violet(), 0.20),
+            theme::pink(),
+        ),
+        FamiliarKind::Bunny => (
+            origin + vec2(size * 0.43, -size * 0.17),
+            size * 0.075,
+            -size * 0.02,
+            tint(theme::blue(), 0.20),
+            theme::white(),
+        ),
+        FamiliarKind::Puppy => (
+            origin + vec2(size * 0.52, -size * 0.13),
+            size * 0.072,
+            -size * 0.035,
+            tint(theme::gold(), 0.19),
+            theme::white(),
+        ),
+    };
+
+    for direction in [-1.0_f32, 1.0] {
+        let eye = head + vec2(eye_dx * direction, eye_y);
+        painter.circle_filled(eye, 3.2, cover);
+        painter.line_segment(
+            [eye + vec2(-2.2, 0.2), eye + vec2(2.2, 0.2)],
+            Stroke::new(1.15, line_color),
+        );
+    }
+}
+
+fn draw_sleep_marks(painter: &Painter, origin: Pos2, size: f32, accent: Color32, elapsed: f32) {
+    let bob = (elapsed * 1.8).sin() * 2.0;
+
+    painter.text(
+        origin + vec2(size * 0.68, -size * 0.76 + bob),
+        Align2::CENTER_CENTER,
+        "z",
+        FontId::proportional(10.0),
+        tint(accent, 0.74),
+    );
+
+    painter.text(
+        origin + vec2(size * 0.90, -size * 1.02 - bob * 0.35),
+        Align2::CENTER_CENTER,
+        "z",
+        FontId::proportional(13.0),
+        tint(accent, 0.52),
+    );
+}
+
+fn draw_feed_effect(painter: &Painter, origin: Pos2, size: f32, age: f32, accent: Color32) {
+    if age < 0.72 {
+        let t = smoothstep((age / 0.72).clamp(0.0, 1.0));
+        let start = origin + vec2(size * 0.15, -size * 1.20);
+        let end = origin + vec2(size * 0.35, -size * 0.18);
+        let snack = lerp_pos(start, end, t);
+
+        painter.circle_filled(snack, 3.8, theme::gold());
+        painter.circle_stroke(snack, 3.8, Stroke::new(1.0, theme::white()));
+    }
+
+    if age > 0.35 {
+        let heart_age = age - 0.35;
+
+        for index in 0..3 {
+            let delay = index as f32 * 0.24;
+            let local = heart_age - delay;
+
+            if !(0.0..=1.6).contains(&local) {
+                continue;
+            }
+
+            let rise = local * size * 0.62;
+            let sway = (local * 5.5 + index as f32 * 1.7).sin() * size * 0.12;
+            let scale = (1.0 - local / 1.6).clamp(0.35, 1.0);
+
+            draw_heart(
+                painter,
+                origin
+                    + vec2(
+                        size * (0.05 + index as f32 * 0.16) + sway,
+                        -size * 0.62 - rise,
+                    ),
+                4.8 * scale,
+                tint(accent, 0.82),
+            );
+        }
+    }
+
+    if age < 1.05 {
+        painter.text(
+            origin + vec2(0.0, -size * 1.08),
+            Align2::CENTER_BOTTOM,
+            "nom!",
+            FontId::proportional(10.0),
+            theme::white(),
+        );
+    }
+}
+
+fn draw_heart(painter: &Painter, center: Pos2, size: f32, color: Color32) {
+    let radius = size * 0.34;
+
+    painter.circle_filled(center + vec2(-radius * 0.62, -radius * 0.18), radius, color);
+    painter.circle_filled(center + vec2(radius * 0.62, -radius * 0.18), radius, color);
+
+    painter.add(Shape::convex_polygon(
+        vec![
+            center + vec2(-size * 0.56, -size * 0.02),
+            center + vec2(size * 0.56, -size * 0.02),
+            center + vec2(0.0, size * 0.72),
+        ],
+        color,
+        Stroke::NONE,
+    ));
 }
 
 // -----------------------------------------------------------------------------
