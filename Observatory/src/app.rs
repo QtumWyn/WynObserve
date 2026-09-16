@@ -12,7 +12,7 @@ use crate::{
         TelemetrySource, TruthLevel,
     },
     theme, ui,
-    updater::{UpdateState, Updater},
+    updater::{UpdateSnapshot, UpdateState, Updater},
 };
 use wyn_protocol::{ObservatoryResponseKind, process_memory::ProcessMemoryMap};
 
@@ -653,18 +653,20 @@ impl ObservatoryApp {
         ui.add_space(10.0);
 
         ui.label(
-            egui::RichText::new("UPDATES")
+            egui::RichText::new("SOFTWARE / UPDATES")
                 .monospace()
                 .strong()
                 .color(theme::pink()),
         );
 
-        ui.label(format!("Installed version: {}", env!("CARGO_PKG_VERSION")));
-
         ui.add_space(6.0);
 
         match self.updater.state() {
             UpdateState::Idle => {
+                ui.label(
+                    egui::RichText::new("Updater status not checked yet.").color(theme::muted()),
+                );
+
                 if ui.button("CHECK FOR UPDATES").clicked() {
                     self.updater.check();
                 }
@@ -673,48 +675,57 @@ impl ObservatoryApp {
             UpdateState::Checking => {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label("Checking for updates...");
+
+                    ui.label("Checking Agent, Observatory, and Updater...");
                 });
             }
 
-            UpdateState::Current => {
-                ui.label(egui::RichText::new("✓ WynObserve is up to date").color(theme::green()));
+            UpdateState::Current(snapshot) => {
+                draw_update_components(ui, &snapshot);
+
+                ui.add_space(6.0);
+
+                ui.label(
+                    egui::RichText::new("✓ Everything is up to date")
+                        .strong()
+                        .color(theme::green()),
+                );
 
                 if ui.button("CHECK AGAIN").clicked() {
                     self.updater.check();
                 }
             }
 
-            UpdateState::Available(update) => {
-                ui.label(
-                    egui::RichText::new(format!("Update available: {}", update.version))
-                        .strong()
-                        .color(theme::blue()),
-                );
+            UpdateState::Available(snapshot) => {
+                draw_update_components(ui, &snapshot);
+
+                ui.add_space(6.0);
 
                 ui.label(
-                    egui::RichText::new(format!("Release: {}", update.tag))
-                        .monospace()
-                        .size(10.0)
-                        .color(theme::muted()),
+                    egui::RichText::new(format!(
+                        "{} update(s) available",
+                        snapshot.updates_available
+                    ))
+                    .strong()
+                    .color(theme::gold()),
                 );
 
-                if ui.button("UPDATE NOW").clicked() {
-                    self.updater.install(update);
-                }
-            }
-
-            UpdateState::Downloading => {
                 ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label("Downloading update...");
+                    if ui.button("UPDATE ALL").clicked() {
+                        self.updater.install_all();
+                    }
+
+                    if ui.button("CHECK AGAIN").clicked() {
+                        self.updater.check();
+                    }
                 });
             }
 
             UpdateState::Installing => {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label("Installing update...");
+
+                    ui.label("Installing WynObserve updates...");
                 });
 
                 ui.label(
@@ -722,28 +733,53 @@ impl ObservatoryApp {
                         .size(10.0)
                         .color(theme::muted()),
                 );
+
+                ui.label(
+                    egui::RichText::new("Agent may briefly reconnect while its service restarts.")
+                        .size(10.0)
+                        .color(theme::muted()),
+                );
             }
 
-            UpdateState::Installed(version) => {
+            UpdateState::Installed(snapshot) => {
+                draw_update_components(ui, &snapshot);
+
+                ui.add_space(6.0);
+
                 ui.label(
-                    egui::RichText::new(format!("✓ WynObserve {} installed", version))
+                    egui::RichText::new("✓ Updates installed")
                         .strong()
                         .color(theme::green()),
                 );
 
-                ui.label("Restart WynObserve to use the new version.");
+                ui.label(
+                    egui::RichText::new(
+                        "Restart Observatory if the Observatory package itself changed.",
+                    )
+                    .size(10.0)
+                    .color(theme::muted()),
+                );
 
-                if ui.button("RESTART NOW").clicked() {
-                    match crate::updater::restart_installed() {
-                        Ok(()) => {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
+                ui.horizontal(|ui| {
+                    if ui.button("RESTART OBSERVATORY").clicked() {
+                        match crate::updater::restart_installed() {
+                            Ok(()) => {
+                                ctx.send_viewport_cmd_to(
+                                    egui::ViewportId::ROOT,
+                                    egui::ViewportCommand::Close,
+                                );
+                            }
 
-                        Err(error) => {
-                            eprintln!("WynObserve // restart failed: {error}");
+                            Err(error) => {
+                                eprintln!("Observatory // restart failed: {error}");
+                            }
                         }
                     }
-                }
+
+                    if ui.button("CHECK AGAIN").clicked() {
+                        self.updater.check();
+                    }
+                });
             }
 
             UpdateState::Error(error) => {
@@ -763,299 +799,271 @@ impl ObservatoryApp {
             return;
         }
 
+        let viewport_id = egui::ViewportId::from_hash_of("wynobserve_settings_viewport");
+
+        let builder = egui::ViewportBuilder::default()
+            .with_title("WynObserve // Settings")
+            .with_inner_size([640.0, 760.0])
+            .with_min_inner_size([480.0, 420.0])
+            .with_resizable(true);
+
         let was_open = self.settings_open;
-        let mut open = self.settings_open;
+
+        let mut close_requested = false;
+
         let mut changed = false;
+
         let mut save_clicked = false;
 
-        egui::Window::new("WYNOBSERVE // SETTINGS")
-            .open(&mut open)
-            .default_width(560.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                ui.label(
-                    egui::RichText::new("IDENTITY")
-                        .monospace()
-                        .strong()
-                        .color(theme::pink()),
-                );
+        ctx.show_viewport_immediate(viewport_id, builder, |settings_ctx, _class| {
+            close_requested = settings_ctx.input(|input| input.viewport().close_requested());
 
-                ui.label(
-                    egui::RichText::new(
-                        "Give this copy of Observatory its own name and familiar energy.",
-                    )
-                        .color(theme::muted()),
-                );
+            let settings_ctx_for_contents = settings_ctx.clone();
 
-                ui.add_space(6.0);
-
-                ui.horizontal(|ui| {
-                    ui.label("Display name");
-
-                    changed |= ui
-                        .text_edit_singleline(
-                            &mut self.preferences.title,
-                        )
-                        .changed();
-                });
-
-                ui.add_space(8.0);
-
-                ui.label(
-                    egui::RichText::new("FAMILIARS")
-                        .monospace()
-                        .strong()
-                        .color(theme::violet()),
-                );
-
-                ui.horizontal_wrapped(|ui| {
-                    changed |= ui
-                        .checkbox(
-                            &mut self.preferences.catgirl,
-                            "Catgirl",
-                        )
-                        .changed();
-
-                    changed |= ui
-                        .checkbox(
-                            &mut self.preferences.batgirl,
-                            "Batgirl",
-                        )
-                        .changed();
-
-                    changed |= ui
-                        .checkbox(
-                            &mut self.preferences.bunnygirl,
-                            "Bunnygirl",
-                        )
-                        .changed();
-
-                    changed |= ui
-                        .checkbox(
-                            &mut self.preferences.puppygirl,
-                            "Puppygirl",
-                        )
-                        .changed();
-                });
-
-                let signature = self.preferences.familiar_signature();
-
-                if !signature.is_empty() {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Selected: {signature}"
-                        ))
-                            .monospace()
-                            .color(theme::blue()),
-                    );
-                }
-
-                ui.add_space(10.0);
-                ui.separator();
-                ui.add_space(10.0);
-
-                ui.label(
-                    egui::RichText::new("THEME")
-                        .monospace()
-                        .strong()
-                        .color(theme::pink()),
-                );
-
-                ui.horizontal_wrapped(|ui| {
-                    for preset in ThemePreset::ALL {
-                        let selected =
-                            self.preferences.theme == preset;
-
-                        if ui
-                            .add(
-                                egui::Button::new(preset.label())
-                                    .selected(selected),
-                            )
-                            .clicked()
-                            && !selected
-                        {
-                            self.preferences.theme = preset;
-                            changed = true;
-                        }
-                    }
-                });
-
-                if self.preferences.theme != ThemePreset::Custom {
-                    if ui.button("CUSTOMIZE THIS PRESET").clicked() {
-                        self.preferences.custom_theme =
-                            theme::palette_for_preset(
-                                self.preferences.theme,
-                            );
-
-                        self.preferences.theme = ThemePreset::Custom;
-                        changed = true;
-                    }
-                }
-
-                if self.preferences.theme == ThemePreset::Custom {
-                    ui.add_space(10.0);
-
-                    ui.label(
-                        egui::RichText::new("CUSTOM THEME BUILDER")
-                            .monospace()
-                            .strong()
-                            .color(theme::blue()),
-                    );
-
-                    ui.label(
-                        egui::RichText::new(
-                            "A small builder for the colors that matter most. Changes preview live.",
-                        )
-                            .color(theme::muted()),
-                    );
-
-                    ui.add_space(6.0);
-
-                    egui::Grid::new("custom_theme_builder")
-                        .num_columns(2)
-                        .spacing([16.0, 7.0])
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(theme::bg()).inner_margin(16.0))
+                .show(settings_ctx, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("wynobserve_settings_scroll")
+                        .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            changed |= color_row(
-                                ui,
-                                "Background",
-                                &mut self.preferences.custom_theme.bg,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Panel",
-                                &mut self.preferences.custom_theme.panel,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Panel Alt",
-                                &mut self.preferences.custom_theme.panel_alt,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Border",
-                                &mut self.preferences.custom_theme.border,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Primary",
-                                &mut self.preferences.custom_theme.primary,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Secondary",
-                                &mut self.preferences.custom_theme.secondary,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Info / Data",
-                                &mut self.preferences.custom_theme.info,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Success / Observed",
-                                &mut self.preferences.custom_theme.success,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Warning / Thermal",
-                                &mut self.preferences.custom_theme.warning,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Selection",
-                                &mut self.preferences.custom_theme.selection,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Text",
-                                &mut self.preferences.custom_theme.text,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Muted Text",
-                                &mut self.preferences.custom_theme.muted,
-                            );
-                            changed |= color_row(
-                                ui,
-                                "Bright Text",
-                                &mut self.preferences.custom_theme.bright,
-                            );
+                            let (did_change, did_save) =
+                                self.settings_contents(ui, &settings_ctx_for_contents);
+
+                            changed |= did_change;
+                            save_clicked |= did_save;
                         });
-
-                    ui.add_space(6.0);
-
-                    if ui.button("RESET CUSTOM → GOTHIC").clicked() {
-                        self.preferences.custom_theme =
-                            theme::gothic_palette();
-                        changed = true;
-                    }
-                }
-
-                ui.add_space(12.0);
-                ui.separator();
-                ui.add_space(10.0);
-
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(
-                            self.settings_dirty || changed,
-                            egui::Button::new("SAVE SETTINGS"),
-                        )
-                        .clicked()
-                    {
-                        save_clicked = true;
-                    }
-
-                    if ui.button("RESET ALL").clicked() {
-                        self.preferences = UiPreferences::default();
-                        changed = true;
-                    }
                 });
-
-                ui.add_space(5.0);
-
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(format!(
-                            "config: {}",
-                            config::config_path().display()
-                        ))
-                            .monospace()
-                            .size(9.5)
-                            .color(theme::muted()),
-                    )
-                        .wrap(),
-                );
-
-                if let Some(status) = &self.settings_status {
-                    ui.label(
-                        egui::RichText::new(status)
-                            .size(10.0)
-                            .color(theme::muted()),
-                    );
-                }
-
-                ui.add_space(12.0);
-
-                self.updater_section(
-                    ui,
-                    ctx,
-                );
-            });
+        });
 
         if changed {
             self.settings_dirty = true;
+
             theme::apply(ctx, &self.preferences);
 
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.preferences.title.clone()));
         }
 
-        let closed = was_open && !open;
-        self.settings_open = open;
+        if close_requested {
+            self.settings_open = false;
+        }
+
+        let closed = was_open && !self.settings_open;
 
         if save_clicked || (closed && self.settings_dirty) {
             self.save_preferences();
         }
+    }
+
+    fn settings_contents(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) -> (bool, bool) {
+        let mut changed = false;
+        let mut save_clicked = false;
+
+        ui.label(
+            egui::RichText::new("IDENTITY")
+                .monospace()
+                .strong()
+                .color(theme::pink()),
+        );
+
+        ui.label(
+            egui::RichText::new("Give this copy of Observatory its own name and familiar energy.")
+                .color(theme::muted()),
+        );
+
+        ui.add_space(6.0);
+
+        ui.horizontal(|ui| {
+            ui.label("Display name");
+
+            changed |= ui
+                .text_edit_singleline(&mut self.preferences.title)
+                .changed();
+        });
+
+        ui.add_space(8.0);
+
+        ui.label(
+            egui::RichText::new("FAMILIARS")
+                .monospace()
+                .strong()
+                .color(theme::violet()),
+        );
+
+        ui.horizontal_wrapped(|ui| {
+            changed |= ui
+                .checkbox(&mut self.preferences.catgirl, "Catgirl")
+                .changed();
+
+            changed |= ui
+                .checkbox(&mut self.preferences.batgirl, "Batgirl")
+                .changed();
+
+            changed |= ui
+                .checkbox(&mut self.preferences.bunnygirl, "Bunnygirl")
+                .changed();
+
+            changed |= ui
+                .checkbox(&mut self.preferences.puppygirl, "Puppygirl")
+                .changed();
+        });
+
+        let signature = self.preferences.familiar_signature();
+
+        if !signature.is_empty() {
+            ui.label(
+                egui::RichText::new(format!("Selected: {signature}"))
+                    .monospace()
+                    .color(theme::blue()),
+            );
+        }
+
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
+
+        ui.label(
+            egui::RichText::new("THEME")
+                .monospace()
+                .strong()
+                .color(theme::pink()),
+        );
+
+        ui.horizontal_wrapped(|ui| {
+            for preset in ThemePreset::ALL {
+                let selected = self.preferences.theme == preset;
+
+                if ui
+                    .add(egui::Button::new(preset.label()).selected(selected))
+                    .clicked()
+                    && !selected
+                {
+                    self.preferences.theme = preset;
+                    changed = true;
+                }
+            }
+        });
+
+        if self.preferences.theme != ThemePreset::Custom {
+            if ui.button("CUSTOMIZE THIS PRESET").clicked() {
+                self.preferences.custom_theme = theme::palette_for_preset(self.preferences.theme);
+
+                self.preferences.theme = ThemePreset::Custom;
+                changed = true;
+            }
+        }
+
+        if self.preferences.theme == ThemePreset::Custom {
+            ui.add_space(10.0);
+
+            ui.label(
+                egui::RichText::new("CUSTOM THEME BUILDER")
+                    .monospace()
+                    .strong()
+                    .color(theme::blue()),
+            );
+
+            ui.label(
+                egui::RichText::new(
+                    "A small builder for the colors that matter most. Changes preview live.",
+                )
+                .color(theme::muted()),
+            );
+
+            ui.add_space(6.0);
+
+            egui::Grid::new("custom_theme_builder")
+                .num_columns(2)
+                .spacing([16.0, 7.0])
+                .show(ui, |ui| {
+                    changed |= color_row(ui, "Background", &mut self.preferences.custom_theme.bg);
+                    changed |= color_row(ui, "Panel", &mut self.preferences.custom_theme.panel);
+                    changed |= color_row(
+                        ui,
+                        "Panel Alt",
+                        &mut self.preferences.custom_theme.panel_alt,
+                    );
+                    changed |= color_row(ui, "Border", &mut self.preferences.custom_theme.border);
+                    changed |= color_row(ui, "Primary", &mut self.preferences.custom_theme.primary);
+                    changed |= color_row(
+                        ui,
+                        "Secondary",
+                        &mut self.preferences.custom_theme.secondary,
+                    );
+                    changed |=
+                        color_row(ui, "Info / Data", &mut self.preferences.custom_theme.info);
+                    changed |= color_row(
+                        ui,
+                        "Success / Observed",
+                        &mut self.preferences.custom_theme.success,
+                    );
+                    changed |= color_row(
+                        ui,
+                        "Warning / Thermal",
+                        &mut self.preferences.custom_theme.warning,
+                    );
+                    changed |= color_row(
+                        ui,
+                        "Selection",
+                        &mut self.preferences.custom_theme.selection,
+                    );
+                    changed |= color_row(ui, "Text", &mut self.preferences.custom_theme.text);
+                    changed |=
+                        color_row(ui, "Muted Text", &mut self.preferences.custom_theme.muted);
+                    changed |=
+                        color_row(ui, "Bright Text", &mut self.preferences.custom_theme.bright);
+                });
+
+            ui.add_space(6.0);
+
+            if ui.button("RESET CUSTOM → GOTHIC").clicked() {
+                self.preferences.custom_theme = theme::gothic_palette();
+                changed = true;
+            }
+        }
+
+        ui.add_space(12.0);
+        ui.separator();
+        ui.add_space(10.0);
+
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    self.settings_dirty || changed,
+                    egui::Button::new("SAVE SETTINGS"),
+                )
+                .clicked()
+            {
+                save_clicked = true;
+            }
+
+            if ui.button("RESET ALL").clicked() {
+                self.preferences = UiPreferences::default();
+                changed = true;
+            }
+        });
+
+        ui.add_space(5.0);
+
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("config: {}", config::config_path().display()))
+                    .monospace()
+                    .size(9.5)
+                    .color(theme::muted()),
+            )
+            .wrap(),
+        );
+
+        if let Some(status) = &self.settings_status {
+            ui.label(egui::RichText::new(status).size(10.0).color(theme::muted()));
+        }
+
+        ui.add_space(12.0);
+
+        self.updater_section(ui, ctx);
+
+        (changed, save_clicked)
     }
 
     fn render_current_view(
@@ -1590,6 +1598,31 @@ impl ObservatoryApp {
             }
         }
     }
+
+    fn version_footer(&self, root: &mut egui::Ui) {
+        let state = self.updater.state();
+
+        let snapshot = match &state {
+            UpdateState::Current(snapshot)
+            | UpdateState::Available(snapshot)
+            | UpdateState::Installed(snapshot) => Some(snapshot),
+
+            _ => None,
+        };
+
+        egui::Panel::bottom("observatory_version_footer")
+            .exact_size(24.0)
+            .frame(egui::Frame::new().fill(theme::deep_bg()).inner_margin(4.0))
+            .show(root, |ui| {
+                ui.columns(3, |columns| {
+                    version_footer_item(&mut columns[0], snapshot, "Agent");
+
+                    version_footer_item(&mut columns[1], snapshot, "Observatory");
+
+                    version_footer_item(&mut columns[2], snapshot, "Updater");
+                });
+            });
+    }
 }
 
 fn color_row(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) -> bool {
@@ -1633,6 +1666,114 @@ fn nav_group(ui: &mut egui::Ui, current: &mut View, label: &str, views: &[View])
     ui.add_space(7.0);
 }
 
+fn draw_update_components(ui: &mut egui::Ui, snapshot: &crate::updater::UpdateSnapshot) {
+    egui::Grid::new("wynobserve_update_components")
+        .num_columns(4)
+        .spacing([14.0, 5.0])
+        .striped(true)
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("COMPONENT")
+                    .monospace()
+                    .strong()
+                    .color(theme::muted()),
+            );
+
+            ui.label(
+                egui::RichText::new("INSTALLED")
+                    .monospace()
+                    .strong()
+                    .color(theme::muted()),
+            );
+
+            ui.label(
+                egui::RichText::new("LATEST")
+                    .monospace()
+                    .strong()
+                    .color(theme::muted()),
+            );
+
+            ui.label(
+                egui::RichText::new("STATUS")
+                    .monospace()
+                    .strong()
+                    .color(theme::muted()),
+            );
+
+            ui.end_row();
+
+            for component in &snapshot.components {
+                ui.label(
+                    egui::RichText::new(&component.name)
+                        .monospace()
+                        .color(theme::white()),
+                );
+
+                ui.label(
+                    egui::RichText::new(component.installed.as_deref().unwrap_or("not installed"))
+                        .monospace()
+                        .color(theme::blue()),
+                );
+
+                ui.label(
+                    egui::RichText::new(component.latest.as_deref().unwrap_or("-"))
+                        .monospace()
+                        .color(theme::violet()),
+                );
+
+                let (status_label, status_color) = match component.status.as_str() {
+                    "current" => ("CURRENT", theme::green()),
+
+                    "update_available" => ("UPDATE", theme::gold()),
+
+                    "not_installed" => ("MISSING", theme::pink()),
+
+                    _ => (component.status.as_str(), theme::muted()),
+                };
+
+                ui.label(
+                    egui::RichText::new(status_label)
+                        .monospace()
+                        .strong()
+                        .color(status_color),
+                );
+
+                ui.end_row();
+            }
+        });
+}
+
+fn version_footer_item(ui: &mut egui::Ui, snapshot: Option<&UpdateSnapshot>, component_name: &str) {
+    let component = snapshot.and_then(|snapshot| {
+        snapshot
+            .components
+            .iter()
+            .find(|component| component.name == component_name)
+    });
+
+    let version = component
+        .and_then(|component| component.installed.as_deref())
+        .unwrap_or("...");
+
+    let color = match component.map(|component| component.status.as_str()) {
+        Some("update_available") => theme::gold(),
+
+        Some("current") => theme::muted(),
+
+        _ => theme::muted(),
+    };
+
+    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+        ui.label(
+            egui::RichText::new(format!("{component_name} V{version}"))
+                .monospace()
+                .size(9.5)
+                .strong()
+                .color(color),
+        );
+    });
+}
+
 impl eframe::App for ObservatoryApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_process_memory_map_response();
@@ -1660,7 +1801,14 @@ impl eframe::App for ObservatoryApp {
         // receives the height between those two bars instead of extending
         // underneath the timeline panel.
         self.top_bar(root);
+
+        /*
+         * First bottom panel gets the actual bottom edge.
+         * Timeline is then stacked immediately above it.
+         */
+        self.version_footer(root);
         self.bottom_bar(root);
+
         self.nav(root);
 
         let selected_machine = self

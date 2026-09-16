@@ -1,48 +1,33 @@
 use std::{
-    env, fs,
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     sync::{Arc, Mutex},
     thread,
 };
 
-use semver::Version;
 use serde::Deserialize;
 
-const RELEASES_API: &str = "https://api.github.com/repos/QtumWyn/WynObserve/releases?per_page=100";
-
-const TAG_PREFIX: &str = "observatory-v";
-
 #[derive(Debug, Clone, Deserialize)]
-struct GithubAsset {
-    name: String,
-    browser_download_url: String,
+pub struct ComponentUpdate {
+    pub name: String,
+    pub installed: Option<String>,
+    pub latest: Option<String>,
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct GithubRelease {
-    tag_name: String,
-    draft: bool,
-    prerelease: bool,
-    assets: Vec<GithubAsset>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AvailableUpdate {
-    pub version: Version,
-    pub tag: String,
-    pub download_url: String,
+pub struct UpdateSnapshot {
+    pub components: Vec<ComponentUpdate>,
+    pub updates_available: usize,
 }
 
 #[derive(Debug, Clone)]
 pub enum UpdateState {
     Idle,
     Checking,
-    Current,
-    Available(AvailableUpdate),
-    Downloading,
+    Current(UpdateSnapshot),
+    Available(UpdateSnapshot),
     Installing,
-    Installed(Version),
+    Installed(UpdateSnapshot),
     Error(String),
 }
 
@@ -73,10 +58,14 @@ impl Updater {
         let state = Arc::clone(&self.state);
 
         thread::spawn(move || {
-            let next = match check_for_update() {
-                Ok(Some(update)) => UpdateState::Available(update),
-
-                Ok(None) => UpdateState::Current,
+            let next = match query_update_status() {
+                Ok(snapshot) => {
+                    if snapshot.updates_available > 0 {
+                        UpdateState::Available(snapshot)
+                    } else {
+                        UpdateState::Current(snapshot)
+                    }
+                }
 
                 Err(error) => UpdateState::Error(error),
             };
@@ -85,34 +74,29 @@ impl Updater {
         });
     }
 
-    pub fn install(&self, update: AvailableUpdate) {
+    pub fn install_all(&self) {
+        set_state(&self.state, UpdateState::Installing);
+
         let state = Arc::clone(&self.state);
 
-        thread::spawn(move || {
-            set_state(&state, UpdateState::Downloading);
-
-            let path = match download_update(&update) {
-                Ok(path) => path,
-
-                Err(error) => {
-                    set_state(&state, UpdateState::Error(error));
-
-                    return;
-                }
-            };
-
-            set_state(&state, UpdateState::Installing);
-
-            match install_package(&path) {
-                Ok(()) => {
-                    let _ = fs::remove_file(&path);
-
-                    set_state(&state, UpdateState::Installed(update.version));
+        thread::spawn(move || match run_install() {
+            Ok(()) => match query_update_status() {
+                Ok(snapshot) => {
+                    set_state(&state, UpdateState::Installed(snapshot));
                 }
 
                 Err(error) => {
-                    set_state(&state, UpdateState::Error(error));
+                    set_state(
+                        &state,
+                        UpdateState::Error(format!(
+                            "update installed, but refresh failed: {error}"
+                        )),
+                    );
                 }
+            },
+
+            Err(error) => {
+                set_state(&state, UpdateState::Error(error));
             }
         });
     }
@@ -126,115 +110,39 @@ fn set_state(state: &Arc<Mutex<UpdateState>>, value: UpdateState) {
     *guard = value;
 }
 
-fn check_for_update() -> Result<Option<AvailableUpdate>, String> {
-    let client = github_client()?;
+fn query_update_status() -> Result<UpdateSnapshot, String> {
+    let output = Command::new("wyn-update")
+        .arg("--json")
+        .output()
+        .map_err(|error| format!("could not launch wyn-update: {error}"))?;
 
-    let releases: Vec<GithubRelease> = client
-        .get(RELEASES_API)
-        .send()
-        .map_err(|error| error.to_string())?
-        .error_for_status()
-        .map_err(|error| error.to_string())?
-        .json()
-        .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
 
-    let current = Version::parse(env!("CARGO_PKG_VERSION")).map_err(|error| error.to_string())?;
-
-    let latest = releases
-        .into_iter()
-        .filter_map(release_to_update)
-        .filter(|update| update.version > current)
-        .max_by(|left, right| left.version.cmp(&right.version));
-
-    Ok(latest)
-}
-
-fn release_to_update(release: GithubRelease) -> Option<AvailableUpdate> {
-    if release.draft || release.prerelease {
-        return None;
+        return Err(format!("wyn-update --json failed: {}", stderr.trim(),));
     }
 
-    let version = Version::parse(release.tag_name.strip_prefix(TAG_PREFIX)?).ok()?;
-
-    let asset = release.assets.into_iter().find(|asset| {
-        asset.name.starts_with("wynobserve_") && asset.name.ends_with("_amd64.deb")
-    })?;
-
-    Some(AvailableUpdate {
-        version,
-        tag: release.tag_name,
-        download_url: asset.browser_download_url,
-    })
+    serde_json::from_slice::<UpdateSnapshot>(&output.stdout)
+        .map_err(|error| format!("could not parse updater JSON: {error}"))
 }
 
-fn github_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
-        .user_agent(concat!("WynObserve/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|error| error.to_string())
-}
-
-fn download_update(update: &AvailableUpdate) -> Result<PathBuf, String> {
-    let client = github_client()?;
-
-    let response = client
-        .get(&update.download_url)
-        .send()
-        .map_err(|error| error.to_string())?
-        .error_for_status()
-        .map_err(|error| error.to_string())?;
-
-    let bytes = response.bytes().map_err(|error| error.to_string())?;
-
-    let path = env::temp_dir().join(format!(
-        "wynobserve-update-{}-{}.deb",
-        update.version,
-        std::process::id(),
-    ));
-
-    fs::write(&path, &bytes).map_err(|error| error.to_string())?;
-
-    Ok(path)
-}
-
-fn install_package(path: &Path) -> Result<(), String> {
-    if !Path::new("/usr/bin/pkexec").exists() {
-        return Err("pkexec is not installed".to_string());
-    }
-
-    let status = Command::new("/usr/bin/pkexec")
-        .arg("/usr/bin/apt-get")
-        .arg("install")
-        .arg("-y")
-        .arg(path)
-        .stdin(Stdio::null())
+fn run_install() -> Result<(), String> {
+    let status = Command::new("wyn-update")
+        .args(["--install", "--yes"])
         .status()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| format!("could not launch wyn-update: {error}"))?;
 
-    match status.code() {
-        Some(0) => Ok(()),
-
-        Some(126) => Err("update authorization was cancelled".to_string()),
-
-        Some(127) => Err("update authorization failed".to_string()),
-
-        _ => Err(format!("package installer exited with {status}")),
+    if !status.success() {
+        return Err(format!("wyn-update exited with {status}"));
     }
+
+    Ok(())
 }
 
 pub fn restart_installed() -> Result<(), String> {
-    let installed = Path::new("/usr/bin/wynobserve");
-
-    let executable = if installed.exists() {
-        installed.to_path_buf()
-    } else {
-        env::current_exe().map_err(|error| error.to_string())?
-    };
-
-    let args = env::args_os().skip(1).collect::<Vec<_>>();
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
 
     Command::new(executable)
-        .args(args)
         .spawn()
         .map_err(|error| error.to_string())?;
 
