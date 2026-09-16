@@ -49,25 +49,34 @@ fn main() {
 fn run() -> Result<(), Box<dyn Error>> {
     let options = parse_options()?;
 
-    println!("WynObserve // Updater :3");
-    println!();
-
+    /*
+     * First gather all update information without printing anything.
+     *
+     * This keeps --json stdout completely machine-readable.
+     */
     let mut plans = Vec::new();
 
     for component in Component::ALL {
-        let plan = check_component(component)?;
-
-        print_plan(&plan);
-
-        println!();
-
-        plans.push(plan);
+        plans.push(check_component(component)?);
     }
 
+    /*
+     * Machine-readable mode must emit JSON and nothing else on stdout.
+     */
     if options.json {
         print_json(&plans)?;
-
         return Ok(());
+    }
+
+    /*
+     * Human-readable mode starts here.
+     */
+    println!("WynObserve // Updater :3");
+    println!();
+
+    for plan in &plans {
+        print_plan(plan);
+        println!();
     }
 
     print_summary(&plans);
@@ -92,7 +101,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         install::install(&packages, options.force)?;
 
         println!();
-
         println!("WynObserve // update complete ✓");
     }
 
@@ -261,6 +269,14 @@ fn parse_options() -> Result<Options, Box<dyn Error>> {
 
     if options.yes && !options.install {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "--yes requires --install").into());
+    }
+
+    if options.json && (options.download || options.install || options.force || options.yes) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--json cannot be combined with update/install options",
+        )
+        .into());
     }
 
     Ok(options)
