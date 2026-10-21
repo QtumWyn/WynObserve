@@ -1,0 +1,41 @@
+legacy_view,label,legacy_entrypoint,legacy_source,svelte_nav_label_present,svelte_status,must_preserve
+Overview,THE MACHINE,ui::overview,"src/ui/mod.rs, src/ui/machine_fleet.rs, src/ui/panels.rs",true,"Svelte demo view, not feature parity","Original: hardware topology, component inspector, instruction feed; new: mock schematic, timelines, process preview, mock vein; NPU and target-linked sampling not ported."
+Server,THE SERVER,ui::server_view,src/ui/server.rs,true,Svelte placeholder only,Original: physical server and service topology using mixed live SystemSnapshot and mock analysis data.
+Fleet,FLEET,ui::fleet_view,src/ui/deep_views.rs,true,"Svelte demo view, not feature parity","Original: Hub-connected machines and global target selection; new: demo searchable device table and regional map, not wired to Hub."
+Cpu,CPU,ui::cpu_view,src/ui/panels.rs,true,Svelte placeholder only,Original: per-logical-CPU metrics and drill-down.
+Memory,MEMORY,ui::memory_view,src/ui/panels.rs,true,Svelte placeholder only,"Original: RAM details, pressure, process memory-map linkage."
+Gpu,GPU,ui::gpu_view,src/ui/panels.rs,true,Svelte placeholder only,"Original: GPU utilization, VRAM, clocks, thermal, power and PCIe detail."
+Processes,PROCESSES,ui::processes_view,src/ui/panels.rs,true,Svelte placeholder only,"Original: running/sleeping tabs, PID, CPU/RSS, I/O, thread detail and MAP action."
+Network,NETWORK,ui::network_view,src/ui/panels.rs,true,Svelte placeholder only,"Original: interface, traffic, connection and network detail."
+Npu,NPU OVERVIEW,ui::npu_view,src/ui/panels.rs,true,Svelte placeholder only,Original: dynamically shown only when target reports NPU; present as nav-only in new.
+NpuMemory,NPU MEMORY,ui::npu_memory_view,src/ui/panels.rs,true,Svelte placeholder only,Original: NPU memory details; hardware gated.
+NpuRuntime,NPU RUNTIME,ui::npu_runtime_view,src/ui/panels.rs,true,Svelte placeholder only,Original: NPU runtime details; hardware gated.
+Replay,TIME MACHINE,ui::replay_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Causality,CAUSALITY,ui::causality_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Syscalls,SYSCALLS,ui::syscalls_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Flamegraph,FLAMEGRAPH,ui::flamegraph_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+MemoryMap,MEMORY MAP,ui::memory_map_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Original: Hub request for chosen PID/start-time; refresh, filter, search, pagination, region inspector."
+Scheduler,SCHEDULER,ui::scheduler_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Cache,CACHE / PMU,ui::cache_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Interrupts,IRQ / SOFTIRQ,ui::irq_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+PacketFlow,PACKET FLOW,ui::packet_flow_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Fabric,PCIe FABRIC,ui::fabric_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Numa,NUMA,ui::numa_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+StorageIo,STORAGE I/O,ui::storage_io_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+PowerThermal,POWER / THERMAL,ui::power_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Locks,LOCKS,ui::locks_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Containers,CGROUPS,ui::containers_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Database,DATABASE,ui::database_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Traces,TRACES,ui::traces_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Compare,COMPARE,ui::compare_view,src/ui/extreme_views.rs,true,Svelte placeholder only,Original: compare one fleet target with another.
+Diff,SNAPSHOT DIFF,ui::diff_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+CrossMachine,CROSS-MACHINE,ui::cross_machine_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Anomalies,ANOMALIES,ui::anomalies_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Incidents,INCIDENTS,ui::incidents_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Original: incident list and UI capture counter; replay/export/compare buttons visible, not evidence of completed bundle export."
+SourceSilicon,SOURCE → SILICON,ui::source_silicon_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Firmware,FIRMWARE,ui::firmware_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Security,SECURITY,ui::security_view,src/ui/extreme_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Binary,BINARY,ui::binary_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Autopsy,AUTOPSY,ui::autopsy_view,src/ui/deep_views.rs,true,Svelte placeholder only,"Port the original panel’s content, controls, and stated provenance; confirm mock/live semantics before calling feature live."
+Kernel,KERNEL,ui::kernel_view,src/ui/panels.rs,true,Svelte placeholder only,Original: kernel dashboard with descend mode.
+Logs,LOGS,ui::logs_view,src/ui/panels.rs,true,Svelte placeholder only,Original: event/log view.

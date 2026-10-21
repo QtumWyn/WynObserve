@@ -1,0 +1,259 @@
+/*
+ * WynObserve // Familiars V1
+ * Sits above the center panel without altering its layout or scroll behavior.
+ * Only individual sprites can receive pointers; the rest is transparent.
+ */
+.familiars-anchor {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  width: 100%;
+  height: 0;
+  pointer-events: none;
+}
+
+.familiar-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+  overflow: visible;
+  contain: layout style;
+}
+
+.familiar-layer-source {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  color: var(--muted);
+  opacity: .72;
+  font: 8px 'JetBrains Mono', monospace;
+  letter-spacing: .07em;
+  user-select: none;
+}
+
+.familiar-screenreader {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.familiar-sprite {
+  --familiar-accent: var(--primary);
+  position: absolute;
+  width: 78px;
+  height: 76px;
+  padding: 0;
+  border: 0;
+  border-radius: 45%;
+  color: var(--familiar-accent);
+  background: none;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+  outline-offset: -3px;
+  isolation: isolate;
+  filter: drop-shadow(0 2px 8px color-mix(in srgb, var(--familiar-accent) 22%, transparent));
+  transition: filter .2s ease;
+}
+.familiar-sprite:hover, .familiar-sprite:focus-visible {
+  filter: drop-shadow(0 0 15px color-mix(in srgb, var(--familiar-accent) 70%, transparent));
+}
+.familiar-sprite:focus-visible { outline: 2px solid var(--info); }
+.fam-cat { --familiar-accent: var(--primary); }
+.fam-bat { --familiar-accent: var(--secondary); }
+.fam-bunny { --familiar-accent: var(--info); }
+.fam-puppy { --familiar-accent: var(--warning); }
+
+.familiar-figure {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  animation: fam-breathe 3s ease-in-out infinite;
+}
+.fam-shadow { fill: #050409; opacity: .30; }
+.fam-body, .fam-face, .fam-ear, .fam-foot {
+  stroke: currentColor;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: color-mix(in srgb, var(--familiar-accent) 24%, var(--panel));
+}
+.fam-face { fill: color-mix(in srgb, var(--familiar-accent) 16%, var(--panel-alt)); }
+.fam-ear { fill: color-mix(in srgb, var(--familiar-accent) 30%, var(--panel)); }
+.fam-inner-ear { stroke: var(--primary); stroke-width: 3; fill: none; stroke-linecap: round; }
+.fam-wing { stroke: currentColor; stroke-width: 3; stroke-linejoin: round; fill: color-mix(in srgb, var(--familiar-accent) 41%, var(--panel)); }
+.fam-wing-left, .fam-wing-right { transform-box: fill-box; transform-origin: right center; animation: fam-wing-left .7s ease-in-out infinite alternate; }
+.fam-wing-right { transform-origin: left center; animation-name: fam-wing-right; }
+.fam-line, .fam-tail, .fam-paw, .fam-collar {
+  stroke: currentColor;
+  stroke-width: 3.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+.fam-tail { transform-box: fill-box; transform-origin: 100% 70%; animation: fam-tail 1.2s ease-in-out infinite alternate; }
+.fam-paw { stroke-width: 2.3; }
+.fam-eye { fill: var(--bright); filter: drop-shadow(0 0 2px var(--familiar-accent)); }
+.fam-eye-line, .fam-whisker, .fam-mouth {
+  stroke: var(--bright);
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.fam-whisker { stroke: var(--muted); stroke-width: 1.3; }
+.fam-nose { fill: var(--primary); stroke: none; }
+.fam-fang { fill: var(--bright); stroke: none; }
+.fam-muzzle { fill: color-mix(in srgb, var(--bright) 20%, var(--panel-alt)); }
+.fam-fluff { fill: var(--bright); opacity: .66; }
+.fam-ears { transform-box: fill-box; transform-origin: bottom center; animation: fam-ears 1.7s ease-in-out infinite alternate; }
+.fam-collar { stroke: var(--info); }
+.fam-bunny:not(.is-sleeping) .familiar-figure { animation: fam-hop .9s ease-in-out infinite; }
+.fam-puppy .fam-tail { animation-duration: .48s; }
+.fam-bat .familiar-figure { animation: fam-breathe 1s ease-in-out infinite; }
+
+.familiar-sprite.is-sleeping .familiar-figure { animation: fam-breathe 4s ease-in-out infinite; }
+.familiar-sprite.is-sleeping .fam-wing-left, .familiar-sprite.is-sleeping .fam-wing-right,
+.familiar-sprite.is-sleeping .fam-tail, .familiar-sprite.is-sleeping .fam-ears { animation-play-state: paused; }
+.familiar-sprite.is-happy .familiar-figure { animation: fam-celebrate .47s ease-out 3; }
+.familiar-sprite.is-alert .familiar-figure { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--warning) 35%, transparent)); }
+.familiar-sprite.is-alert.fam-bat .fam-wing-left, .familiar-sprite.is-alert.fam-bat .fam-wing-right { animation-duration: .26s; }
+.familiar-sprite.is-hovered .familiar-figure { scale: 1.07; }
+
+.familiar-bubble {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  bottom: calc(100% - 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 170px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--familiar-accent) 70%, var(--border));
+  border-radius: 9px 9px 9px 3px;
+  box-shadow: 0 7px 20px #0008, 0 0 15px color-mix(in srgb, var(--familiar-accent) 14%, transparent);
+  background: color-mix(in srgb, var(--panel) 95%, var(--familiar-accent));
+  color: var(--bright);
+  font: 10px 'JetBrains Mono', monospace;
+  line-height: 1.4;
+  white-space: normal;
+  text-align: center;
+  pointer-events: none;
+}
+.familiar-bubble small { color: var(--warning); font: 8px 'JetBrains Mono', monospace; letter-spacing: .04em; }
+.familiar-particle {
+  position: absolute;
+  top: 1px;
+  right: -1px;
+  color: var(--primary);
+  font-size: 17px;
+  line-height: 1;
+  animation: fam-heart 1s ease-in-out infinite;
+}
+.familiar-zzz { color: var(--muted); font: 12px 'JetBrains Mono', monospace; }
+.familiar-alert-dot {
+  position: absolute;
+  right: 1px;
+  top: 2px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--warning);
+  border-radius: 50%;
+  width: 17px;
+  height: 17px;
+  background: var(--deep);
+  color: var(--warning);
+  font: 10px 'JetBrains Mono', monospace;
+}
+
+@keyframes fam-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes fam-hop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes fam-wing-left { 0% { transform: rotate(-5deg); } 100% { transform: rotate(14deg); } }
+@keyframes fam-wing-right { 0% { transform: rotate(5deg); } 100% { transform: rotate(-14deg); } }
+@keyframes fam-tail { 0% { transform: rotate(-12deg); } 100% { transform: rotate(14deg); } }
+@keyframes fam-ears { 0% { transform: rotate(-2deg); } 100% { transform: rotate(3deg); } }
+@keyframes fam-celebrate { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-10px) rotate(-3deg); } }
+@keyframes fam-heart { 0% { transform: translateY(5px); opacity: 0; } 35% { opacity: 1; } 100% { transform: translateY(-16px); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .familiar-layer *, .familiar-layer *::before, .familiar-layer *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+@media (max-width: 850px) {
+  .familiar-sprite { width: 64px; height: 63px; }
+  .familiar-layer-source { display: none; }
+}
+
+/* Optional demo-only reaction control. Never mutates actual telemetry. */
+.familiar-lab {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  pointer-events: none;
+  font-family: 'JetBrains Mono', monospace;
+}
+.familiar-lab-toggle {
+  pointer-events: auto;
+  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  color: var(--muted);
+  padding: 7px 9px;
+  font: 9px 'JetBrains Mono', monospace;
+  letter-spacing: .06em;
+}
+.familiar-lab-toggle:hover { color: var(--primary); border-color: var(--primary); }
+.familiar-lab-menu {
+  pointer-events: auto;
+  display: grid;
+  gap: 7px;
+  max-width: min(285px, 90vw);
+  padding: 12px;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  border: 1px solid var(--secondary);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px #000b;
+}
+.familiar-lab-menu > span { color: var(--info); font: 9px 'JetBrains Mono', monospace; }
+.familiar-lab-menu > small { color: var(--muted); font: 9px 'JetBrains Mono', monospace; line-height: 1.5; }
+.familiar-lab-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.familiar-lab-actions button {
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  background: var(--deep);
+  color: var(--text);
+  border-radius: 4px;
+  font: 9px 'JetBrains Mono', monospace;
+}
+.familiar-lab-actions button.chosen { border-color: var(--primary); color: var(--primary); }
+
+/* Standalone preference fallback. Available only without the native Settings bridge. */
+.familiar-visibility-heading { color: var(--info); font: 9px 'JetBrains Mono', monospace; }
+.familiar-visibility-controls { display: flex; flex-wrap: wrap; gap: 7px; }
+.familiar-visibility-controls label {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--text); font: 9px 'JetBrains Mono', monospace;
+  cursor: pointer;
+}
+.familiar-visibility-controls input { accent-color: var(--primary); }

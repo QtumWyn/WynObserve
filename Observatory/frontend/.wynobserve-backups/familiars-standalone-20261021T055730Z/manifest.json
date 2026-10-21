@@ -1,0 +1,26 @@
+{
+  "stamp": "20261021T055730Z",
+  "patch": "familiars-v1.1-standalone",
+  "changes": [
+    {
+      "path": "src\\App.svelte",
+      "before_sha256": "5f5c10ed4f43ecc24f8bbe23377a33311a357624d4468feed81542bc3c9cb840",
+      "after_sha256": "a62810456bc1064c02c4d2a0270efc918aa8f81dc9e663344704c99f6b326ff9"
+    },
+    {
+      "path": "src\\lib\\components\\FamiliarLayer.svelte",
+      "before_sha256": null,
+      "after_sha256": "0c9c9e5379e93499ccd04587f1b0aa6682be92230e3b060bd0bb0792e1cbd4aa"
+    },
+    {
+      "path": "src\\lib\\components\\familiars.css",
+      "before_sha256": null,
+      "after_sha256": "f209dad463b71bb5421b6c88b4e07d685d55ff0d1d61e19e330316477f766614"
+    },
+    {
+      "path": "src\\lib\\data\\familiarDiagnostics.ts",
+      "before_sha256": null,
+      "after_sha256": "b40e88fe397c45b24b735b2ee64fee8a215a1b13100b1560cc96f2750e8ef4be"
+    }
+  ]
+}

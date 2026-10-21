@@ -1,0 +1,188 @@
+/* Observatory // Machine 2.0
+ * Scoped to .machine-v2. The original Svelte/egui app and shared CSS are unchanged.
+ * Signal intensities and topology are illustrative only; no real bus tracing.
+ */
+.machine-v2 {
+  background:
+    radial-gradient(ellipse at 50% 33%, color-mix(in srgb, var(--secondary) 10%, transparent), transparent 55%),
+    radial-gradient(ellipse at 50% 105%, color-mix(in srgb, var(--primary) 6%, transparent), transparent 57%),
+    var(--deep);
+}
+.machine-v2-noise {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(transparent 0px, transparent 5px, rgba(255,255,255,.012) 6px);
+  opacity: .45;
+}
+.machine-v2-corner {
+  position: absolute;
+  top: 17px;
+  z-index: 2;
+  display: grid;
+  gap: 6px;
+  font: 600 9px 'JetBrains Mono', monospace;
+  letter-spacing: .12em;
+  pointer-events: none;
+}
+.machine-v2-corner span { color: var(--info); }
+.machine-v2-corner small { color: var(--muted); font: 8px 'JetBrains Mono', monospace; }
+.machine-v2-corner-left { left: 16px; }
+.machine-v2-corner-right { right: 16px; text-align: right; }
+
+.machine-v2 .schematic-wires { pointer-events: none; }
+.machine-v2 .schematic-wires .machine-v2-route {
+  stroke: var(--info);
+  stroke-width: 2.5;
+  opacity: 0;
+  filter: drop-shadow(0 0 5px var(--info));
+  transition: opacity .28s ease-out, stroke .25s;
+}
+.machine-v2 .schematic-wires .machine-v2-route.focused { opacity: .64; stroke: var(--primary); }
+.machine-v2 .schematic-wires .machine-v2-hub-halo {
+  fill: transparent;
+  stroke: var(--secondary);
+  stroke-width: 1;
+  opacity: .52;
+  transform-origin: 400px 180px;
+  animation: machine-v2-breathe 3.7s ease-in-out infinite;
+}
+.machine-v2[data-mode='thermal'] .schematic-wires .schematic-electric { opacity: .22; }
+.machine-v2[data-mode='topology'] .schematic-wires .machine-v2-route.focused { opacity: .9; }
+@keyframes machine-v2-breathe { 0%,100% { opacity: .25; transform: scale(.72); } 50% { opacity: .75; transform: scale(1.25); } }
+
+.machine-v2-modes {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 160px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  max-width: calc(100% - 14px);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 8px 30px rgba(0,0,0,.23);
+  backdrop-filter: blur(10px);
+}
+.machine-v2-modes button {
+  min-width: 0;
+  padding: 7px 10px;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  white-space: nowrap;
+  font: 600 9px 'JetBrains Mono', monospace;
+  letter-spacing: .04em;
+  transition: color .2s, border-color .2s, background .2s;
+}
+.machine-v2-modes button.chosen {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 38%, transparent);
+  background: color-mix(in srgb, var(--selection) 35%, transparent);
+}
+.machine-v2-modes button:hover:not(.chosen) { color: var(--info); background: var(--panel-alt); }
+
+.machine-v2 .machine-v2-node {
+  z-index: 2;
+  overflow: hidden;
+  min-height: 90px;
+}
+.machine-v2 .machine-v2-node::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--info), transparent);
+  opacity: .35;
+  pointer-events: none;
+}
+.machine-v2 .machine-v2-node.active { z-index: 3; }
+.machine-v2 .machine-v2-node.active::before { background: linear-gradient(90deg, transparent, var(--primary), transparent); opacity: .95; }
+.machine-v2-node-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 5px; min-width: 0; }
+.machine-v2 .machine-v2-node .node-kicker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.machine-v2-node-status { color: var(--muted); font: 7px 'JetBrains Mono', monospace; white-space: nowrap; }
+.machine-v2 .machine-v2-node.active .machine-v2-node-status { color: var(--primary); }
+.machine-v2 .machine-v2-core-row { grid-template-columns: repeat(16, minmax(0, 1fr)); }
+.machine-v2 .machine-v2-core-row .core-cell { min-width: 0; }
+.machine-v2 .machine-v2-node[data-kind='CPU'] { min-height: 129px; }
+.machine-v2 .machine-v2-node[data-kind='MEMORY'],
+.machine-v2 .machine-v2-node[data-kind='GPU'] { min-height: 92px; }
+.machine-v2 .machine-v2-node[data-kind='NVMe'],
+.machine-v2 .machine-v2-node[data-kind='NETWORK'] { min-height: 88px; }
+
+.machine-v2[data-mode='thermal'] .machine-v2-node.thermal-available {
+  border-color: color-mix(in srgb, var(--warning) 70%, var(--border));
+  box-shadow: 0 0 var(--machine-v2-glow) color-mix(in srgb, var(--warning) 22%, transparent),
+    inset 0 0 25px color-mix(in srgb, var(--warning) 7%, transparent);
+}
+.machine-v2[data-mode='thermal'] .machine-v2-node.active.thermal-available {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent),
+    0 0 30px color-mix(in srgb, var(--warning) 18%, transparent);
+}
+.machine-v2-sensor-bar {
+  display: block;
+  position: relative;
+  height: 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--warning) 14%, var(--deep));
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent);
+  overflow: hidden;
+  margin-top: 2px;
+}
+.machine-v2-sensor-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--secondary), var(--warning));
+  transition: width .25s ease-out;
+}
+.machine-v2-sensor-bar.unavailable { height: auto; border: 0; background: transparent; color: var(--muted); }
+.machine-v2-sensor-bar.unavailable > span { display: block; font: 7px 'JetBrains Mono', monospace; letter-spacing: .04em; }
+.machine-v2-topology-label {
+  color: var(--info);
+  font: 7px 'JetBrains Mono', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.machine-v2 .machine-v2-focus {
+  position: absolute;
+  left: 15px;
+  bottom: 8px;
+  z-index: 4;
+  max-width: 43%;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+  font: 8px 'JetBrains Mono', monospace;
+}
+.machine-v2-focus b { color: var(--primary); white-space: nowrap; }
+.machine-v2-focus span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.machine-v2 .schematic-key { max-width: 52%; text-align: right; }
+
+@media (max-width: 1120px) {
+  .machine-v2-corner small { display: none; }
+  .machine-v2 .machine-v2-node-status { display: none; }
+  .machine-v2 .machine-v2-focus span { display: none; }
+}
+@media (max-width: 800px) {
+  .machine-v2-corner { font-size: 7px; }
+  .machine-v2-corner-left { left: 10px; }
+  .machine-v2-corner-right { right: 10px; }
+  .machine-v2-modes button { padding: 7px 6px; font-size: 8px; }
+  .machine-v2 .machine-v2-node { gap: 6px; }
+  .machine-v2 .schematic-key { font-size: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .machine-v2 .schematic-wires .machine-v2-hub-halo { animation: none; }
+  .machine-v2 .schematic-wires .machine-v2-route,
+  .machine-v2 .machine-v2-sensor-fill,
+  .machine-v2 .machine-v2-modes button { transition: none; }
+}

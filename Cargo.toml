@@ -9,5 +9,9 @@ members = [
     "Updater",
 ]
 
+exclude = [
+    "Observatory/frontend/src-tauri",
+]
+
 [workspace.dependencies]
 wyn-protocol = { path = "Protocol" }

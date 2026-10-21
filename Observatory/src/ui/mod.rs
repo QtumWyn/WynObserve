@@ -4,6 +4,7 @@ mod extreme_views;
 mod machine_fleet;
 mod panels;
 mod server;
+mod machine;
 
 pub use critters::draw_familiars;
 pub use deep_views::{

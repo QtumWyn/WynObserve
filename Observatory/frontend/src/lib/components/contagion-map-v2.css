@@ -1,0 +1,130 @@
+/* WynObserve / Contagion Map 2.0
+ * Additive display layer: the original Leaflet map, site markers, endpoint
+ * constellation, pan/zoom and Fleet selection all remain unchanged.
+ * No animation or dashed path is a claim about actual network activity.
+ */
+
+.contagion-map .map-sweep {
+  position: absolute;
+  inset: 0;
+  z-index: 405;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-115%);
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent 75%,
+    rgba(85, 205, 233, 0.02) 90%,
+    rgba(115, 214, 252, 0.14) 99%,
+    rgba(182, 238, 255, 0.23) 100%
+  );
+}
+
+.contagion-map .map-sweep--active {
+  opacity: 1;
+  animation: wyn-map-sweep 9s linear infinite;
+}
+
+@keyframes wyn-map-sweep {
+  from { transform: translateY(-115%); }
+  to { transform: translateY(115%); }
+}
+
+.contagion-map .map-crosshair {
+  position: absolute;
+  z-index: 408;
+  inset: 50% auto auto 50%;
+  width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(94, 180, 211, .12);
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: 0 0 28px rgba(81, 167, 204, .06);
+}
+.contagion-map .map-crosshair::before,
+.contagion-map .map-crosshair::after {
+  content: '';
+  position: absolute;
+  background: rgba(122, 210, 247, .22);
+}
+.contagion-map .map-crosshair::before {width: 1px;height: 64px;top: -9px;left: 23px;}
+.contagion-map .map-crosshair::after {height: 1px;width: 64px;left: -9px;top: 23px;}
+.contagion-map .map-crosshair i {position:absolute;width:5px;height:5px;border:1px solid rgba(122,210,247,.4);}
+.contagion-map .map-crosshair i:first-child {top:0;left:0;border-right:0;border-bottom:0;}
+.contagion-map .map-crosshair i:last-child {right:0;bottom:0;border-top:0;border-left:0;}
+
+.contagion-map .map-hud-count {
+  display: inline-block;
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 6px 8px;
+  border: 1px solid rgba(113, 169, 189, .26);
+  border-radius: 3px;
+  background: rgba(6, 15, 24, .77);
+  color: #b9d9e8;
+  font: 9px 'JetBrains Mono', monospace;
+  letter-spacing: .035em;
+}
+.contagion-map .map-hud-count b {color: var(--primary);font-weight: 400;margin: 0 5px;}
+.contagion-map .map-hud-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 335px;
+  pointer-events: auto;
+}
+.contagion-map .map-hud-controls button {
+  font: 9px 'JetBrains Mono', monospace;
+  color: #a8c6d7;
+  border: 1px solid #365262;
+  background: rgba(6, 15, 25, .93);
+  border-radius: 4px;
+  padding: 9px 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color .18s, color .18s, background .18s;
+}
+.contagion-map .map-hud-controls button:hover,
+.contagion-map .map-hud-controls button:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.contagion-map .map-hud-controls button.map-toggle-active {
+  border-color: color-mix(in srgb, var(--primary), #365262 55%);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, #06101b);
+}
+.contagion-map .map-hud-controls button:focus-visible {outline: 2px solid var(--info);outline-offset:2px;}
+.contagion-map .map-corner.top-right {max-width: min(52%, 335px);}
+.contagion-map .map-coordinate-label {background: #060f19af;padding: 3px 4px;border-radius:2px;}
+
+/* These are opt-in, illustrative site-to-site guides, NOT real network links. */
+.contagion-map .concept-connection--focused {
+  stroke-dashoffset: 0;
+  animation: wyn-map-guide-drift 8s linear infinite;
+  filter: drop-shadow(0 0 3px rgba(102, 212, 246, .6));
+}
+.contagion-map .concept-connection {stroke: #89c7e5;}
+@keyframes wyn-map-guide-drift {to {stroke-dashoffset:-96;}}
+
+/* The overlay should still fit when the Fleet sidebar takes up horizontal room. */
+.contagion-map {container-type: inline-size;}
+@container (max-width: 710px) {
+  .contagion-map .map-corner.top-left {top: 14px;left: 14px;}
+  .contagion-map .map-corner.top-right {top: 106px;left: 14px;right: 14px;align-items: flex-start;max-width: calc(100% - 28px);}
+  .contagion-map .map-hud-controls {justify-content: flex-start;max-width: none;}
+  .contagion-map .map-map-legend {left: 14px;bottom: 55px;flex-wrap: wrap;gap: 10px;padding: 7px;}
+  .contagion-map .map-watermark {left: 14px;right: 14px;bottom: 12px;line-height: 1.4;}
+  .contagion-map .map-hud-count {font-size: 8px;}
+  .contagion-map .map-mode-label {font-size: 8px;}
+  .contagion-map .map-corner strong {font-size: 22px;}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contagion-map .map-sweep--active,
+  .contagion-map .concept-connection--focused {animation: none;}
+  .contagion-map .map-sweep--active {opacity: 0;}
+}
