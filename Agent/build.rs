@@ -39,6 +39,22 @@ fn main() {
             }
         };
 
+    let probe_file = asm_dir.join(format!(
+        "instruction_vein/vein_probe_{}.asm",
+        if target_os == "windows" {
+            "win64"
+        } else {
+            "sysv"
+        }
+    ));
+    let probe_object_path = out_dir.join(if target_os == "windows" {
+        "vein_probe.obj"
+    } else {
+        "vein_probe.o"
+    });
+    assemble(&probe_file, &probe_object_path, object_format);
+    println!("cargo:rerun-if-changed={}", probe_file.display());
+
     let cpuid_object_path = out_dir.join(cpuid_object_name);
 
     let vein_tsc_object_path = out_dir.join(vein_tsc_object_name);
@@ -57,6 +73,7 @@ fn main() {
     cc::Build::new()
         .object(&cpuid_object_path)
         .object(&vein_tsc_object_path)
+        .object(&probe_object_path)
         .compile("wynasm");
 
     /*

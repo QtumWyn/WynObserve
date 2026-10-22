@@ -6,6 +6,7 @@ members = [
     "Protocol",
     "Hub",
     "Observatory",
+    "ObservatoryCore",
     "Updater",
 ]
 

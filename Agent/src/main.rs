@@ -5,11 +5,14 @@ mod format;
 mod inspection;
 mod instruction_vein;
 mod metrics;
+mod motherboard;
 mod protocol;
 mod runtime;
 mod snapshot;
 mod telemetry;
 mod transport;
+#[cfg(windows)]
+mod windows;
 
 use std::thread;
 

@@ -9,6 +9,21 @@ export interface CpuCore {
   frequencyMHz: number;
 }
 
+export interface GpuReading {
+  usage: number; temperatureC: number; temperatureSource: string | null;
+  vramGiB: number; powerWatts: number; clockMHz: number; source: string;
+}
+export interface GpuAdapter {
+  id: string;
+  name: string;
+  vendor: string;
+  integrated: boolean | null;
+  telemetry: GpuReading | null;
+  dedicatedGiB: number;
+  sharedLimitGiB: number;
+  source: string;
+}
+
 export interface Instruction {
   sequence: number;
   cpu: number;
@@ -25,16 +40,35 @@ export interface Instruction {
   note: string;
 }
 
+export interface MemoryDevice {
+  locator: string | null; bank: string | null; sizeBytes: number | null;
+  formFactor: number | null; memoryType: number | null;
+}
+export interface Motherboard {
+  manufacturer: string | null; model: string | null; version: string | null;
+  systemManufacturer: string | null; systemModel: string | null; chassisType: number | null;
+  source: string; memorySlotCount: number | null; memoryDevices: MemoryDevice[];
+}
+
 export interface TelemetryFrame {
+  source: 'demo' | 'live';
+  capturedAt: number;
+  motherboard?: Motherboard | null;
   cpu: {
     name: string;
+    vendor: string;
+    physicalCoreCount: number | null;
+    logicalCpuCount: number;
     usage: number;
     temperatureC: number;
+    temperatureSource: string | null;
     contextSwitches: number;
     cores: CpuCore[];
   };
-  memory: { usedGiB: number; totalGiB: number; usedPercent: number; faults: number };
-  gpu: { name: string; usage: number; temperatureC: number; vramGiB: number };
+  memory: { usedGiB: number; totalGiB: number; availableGiB: number; usedPercent: number; faults: number };
+  gpu: GpuReading & { id: string | null; name: string; measurementAvailable: boolean; adapters: GpuAdapter[] };
+  npu: { available: boolean; name: string; pciAddress: string | null; usage: number;
+    frequencyMHz: number; maxFrequencyMHz: number; residentMiB: number; powerState: string | null };
   storage: { readMiBs: number; writeMiBs: number };
   network: { rxMiBs: number; txMiBs: number };
   processes: { name: string; pid: number; cpu: number; memoryGiB: number }[];
@@ -68,20 +102,31 @@ export function mockFrame(t: number): TelemetryFrame {
   const sequence = 50_000 + Math.floor(t * 3.5);
 
   return {
+    source: 'demo', capturedAt: t * 1000,
+    motherboard: { manufacturer: 'WynObserve', model: 'Demo motherboard', version: null,
+      systemManufacturer: null, systemModel: 'Synthetic hardware inventory', chassisType: 3, source: 'Synthetic',
+      memorySlotCount: 4, memoryDevices: ['A1','A2','B1','B2'].map(slot => ({ locator: `DIMM_${slot}`, bank: null,
+        sizeBytes: slot.endsWith('2') ? 16*1024**3 : 0, formFactor: 9, memoryType: 34 })) },
     cpu: {
       name: 'Demo CPU // logical topology', usage,
+      vendor: 'Synthetic', physicalCoreCount: null, logicalCpuCount: cores.length,
       temperatureC: 42 + usage * 0.24,
+      temperatureSource: 'Synthetic package sensor',
       contextSwitches: Math.round(18_000 + usage * 310), cores,
     },
     memory: {
-      usedGiB, totalGiB: 32,
+      usedGiB, totalGiB: 32, availableGiB: 32 - usedGiB,
       usedPercent: usedGiB / 32 * 100,
       faults: Math.round(240 + wave(t, 0, 0.7, 0, 900)),
     },
-    gpu: { name: 'NVIDIA RTX // demo', usage: gpuUsage,
+    gpu: { id: 'demo-gpu', name: 'NVIDIA RTX // demo', measurementAvailable: true, source: 'Demo', temperatureSource: 'Synthetic GPU sensor', powerWatts: 50 + gpuUsage, clockMHz: 1900,
+      adapters: [{ id: 'demo-gpu', name: 'NVIDIA RTX // demo', vendor: 'NVIDIA', integrated: false, dedicatedGiB: 12, sharedLimitGiB: NaN, source: 'Demo', telemetry: { usage: gpuUsage, temperatureC: 38 + gpuUsage * 0.42, temperatureSource: 'Synthetic GPU sensor', vramGiB: 12 * (0.24 + gpuUsage / 180), powerWatts: 50 + gpuUsage, clockMHz: 1900, source: 'Demo' } }], usage: gpuUsage,
       temperatureC: 38 + gpuUsage * 0.42,
       vramGiB: 12 * (0.24 + gpuUsage / 180),
     },
+    npu: { available: true, name: 'NPU // demo', pciAddress: null,
+      usage: wave(t, 1, 0.6, 0, 72), frequencyMHz: 800 + wave(t, 1, 0.6, 0, 72) * 5,
+      maxFrequencyMHz: 1400, residentMiB: wave(t, 2, 0.15, 64, 256), powerState: 'Synthetic active' },
     storage: { readMiBs: wave(t, 0.2, 0.42, 1, 140), writeMiBs: wave(t, 1.9, 0.31, 0, 75) },
     network: { rxMiBs: wave(t, 0.4, 0.64, 1, 28), txMiBs: wave(t, 1.5, 0.52, 0.1, 17) },
     processes: [

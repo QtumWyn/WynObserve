@@ -186,3 +186,32 @@
   .machine-v2 .machine-v2-sensor-fill,
   .machine-v2 .machine-v2-modes button { transition: none; }
 }
+
+/* Inventory-driven layout: inline positions and SVG routes share one coordinate model. */
+.observatory-app .machine-dynamic.schematic {
+  display: block; min-height: 0; padding: 0;
+}
+.observatory-app .machine-dynamic .machine-v2-node[data-kind] {
+  position: absolute; right: auto; bottom: auto; min-height: 0;
+  max-width: none; justify-content: center; gap: 8px;
+}
+.observatory-app .machine-dynamic .machine-v2-node strong {
+  white-space: normal; overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.45;
+}
+.observatory-app .machine-dynamic .machine-v2-modes {
+  top: 44px; left: 50%; right: auto; transform: translateX(-50%);
+  flex-wrap: nowrap; width: max-content; max-width: calc(100% - 16px);
+}
+.observatory-app .machine-dynamic .machine-v2-focus { bottom: 16px; max-width: 48%; }
+.observatory-app .machine-dynamic .machine-v2-focus b { overflow: hidden; text-overflow: ellipsis; }
+.observatory-app .machine-dynamic .schematic-key { bottom: 16px; max-width: 48%; }
+.observatory-app .machine-dynamic .schematic-wires { opacity: 1; }
+.machine-dynamic [data-kind='NPU'] .node-progress > span { background: var(--success); }
+.machine-dynamic.signals-paused .schematic-electric { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .machine-dynamic .schematic-electric { animation: none; }
+}
+
+.machine-page-heading { flex-wrap: wrap; }
+.machine-view-switch { flex-shrink: 0; }

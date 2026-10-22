@@ -18,6 +18,12 @@ compile_error!("WynCommand NPU telemetry currently supports Linux and Windows");
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NpuSnapshot {
     pub available: bool,
+    #[serde(default)]
+    pub utilization_available: bool,
+    #[serde(default)]
+    pub frequency_available: bool,
+    #[serde(default)]
+    pub memory_available: bool,
     pub model: String,
     pub pci_address: String,
     pub utilization_percent: f32,

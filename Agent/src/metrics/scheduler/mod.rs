@@ -19,6 +19,10 @@ compile_error!("WynCommand scheduler telemetry currently supports Linux and Wind
 pub struct SchedulerSnapshot {
     pub context_switches_per_second: u64,
 
+    #[serde(default)]
+    pub runnable_tasks_available: bool,
+    #[serde(default)]
+    pub blocked_tasks_available: bool,
     pub runnable_tasks: u64,
     pub blocked_tasks: u64,
 

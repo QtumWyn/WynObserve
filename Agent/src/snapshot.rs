@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 pub struct SystemSnapshot {
     pub schema_version: u16,
     pub captured_at_unix_ms: u64,
+    #[serde(default)]
+    pub motherboard: Option<wyn_protocol::MotherboardSnapshot>,
     pub cpu: CpuSnapshot,
     pub memory: MemorySnapshot,
     pub npu: NpuSnapshot,

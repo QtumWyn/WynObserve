@@ -3,6 +3,9 @@
   import * as L from 'leaflet';
   import 'leaflet/dist/leaflet.css';
   import './contagion-map-v2.css';
+  import './contagion-map-performance.css';
+  import './contagion-map-lite.css';
+  import './contagion-map-lite03.css';
   import {
     demoDevices, demoSites, siteDeviceCount, siteStatus,
     type FleetDevice, type FleetSite, type SiteId,
@@ -25,9 +28,13 @@
   // Visual instrumentation only. The three offices do NOT have a verified
   // inter-site route topology; these guides never represent network traffic.
   let showIllustrativePaths = $state<boolean>(false);
-  let scanEnabled = $state<boolean>(true);
+  let scanEnabled = $state<boolean>(false);
+  // Reversible faster tile rendering, persisted only for this map's UI.
+  let fastMap = $state<boolean>(true);
+  let lastPointerPaint = 0;
   let pointerCoordinates = $state<string>('MOVE POINTER TO INSPECT');
   let pathLayer: L.LayerGroup | null = null;
+  let mapTiles: L.TileLayer | null = null;
   const conceptualLinks: [SiteId, SiteId][] = [
     ['river', 'aa'],
     ['aa', 'hurricane'],
@@ -122,7 +129,10 @@
     selectedDeviceId;
     if (siteId && siteId !== lastCenteredSite && map) {
       const site: FleetSite | undefined = demoSites.find((item: FleetSite): boolean => item.id === siteId);
-      if (site) map.flyTo([site.latitude, site.longitude], 10, { duration: 0.85 });
+      if (site) {
+        if (fastMap) map.setView([site.latitude, site.longitude], 10, { animate: false });
+        else map.flyTo([site.latitude, site.longitude], 10, { duration: 0.85 });
+      }
     }
     lastCenteredSite = siteId;
     redrawMarkers();
@@ -131,6 +141,10 @@
   });
 
   onMount((): (() => void) => {
+    try {
+      const saved = window.localStorage.getItem('wynobserve.contagion.fast-map.v1');
+      if (saved === 'true' || saved === 'false') fastMap = saved === 'true';
+    } catch { /* Keep the performance-friendly default. */ }
     map = L.map(mapHost, {
       zoomControl: false,
       attributionControl: true,
@@ -138,6 +152,9 @@
       minZoom: 5,
       maxZoom: 13,
       preferCanvas: true,
+      zoomAnimation: false,
+      fadeAnimation: false,
+      markerZoomAnimation: false,
     });
     map.fitBounds([[36.2, -90.0], [42.0, -77.1]], { padding: [24, 24] });
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -151,14 +168,24 @@
               maxZoom: 19,
 
               tileSize: 256,
+              // Fast mode loads only nearby tiles after the user finishes panning.
+              // Detailed mode preserves Leaflet desktop defaults.
+              keepBuffer: fastMap ? 1 : 2,
+              updateWhenIdle: fastMap,
+              updateWhenZooming: !fastMap,
 
               crossOrigin: true,
           },
       );
     tiles.on('tileerror', (): void => { tileUnavailable = true; });
+    mapTiles = tiles;
     tiles.addTo(map);
     pathLayer = L.layerGroup().addTo(map);
     map.on('mousemove', (event: L.LeafletMouseEvent): void => {
+      // Limit Svelte DOM updates during pan/hover to eight per second.
+      const now = performance.now();
+      if (now - lastPointerPaint < 125) return;
+      lastPointerPaint = now;
       pointerCoordinates = `${event.latlng.lat.toFixed(3)}° N  /  ${Math.abs(event.latlng.lng).toFixed(3)}° ${event.latlng.lng < 0 ? 'W' : 'E'}`;
     });
     map.on('mouseout', (): void => {
@@ -167,26 +194,51 @@
     redrawIllustrativePaths();
     redrawMarkers();
 
+    let pendingResizeFrame: number | null = null;
+    const observer = new ResizeObserver((): void => {
+      if (pendingResizeFrame !== null) window.cancelAnimationFrame(pendingResizeFrame);
+      pendingResizeFrame = window.requestAnimationFrame((): void => {
+        pendingResizeFrame = null;
+        map?.invalidateSize({ pan: false, animate: false });
+      });
+    });
+    observer.observe(mapHost);
     // Tauri's initial layout may settle after the map mounts.
       const resize: number = window.setTimeout((): void => {
           map?.invalidateSize();
       }, 200);
     return (): void => {
       window.clearTimeout(resize);
+      observer.disconnect();
+      if (pendingResizeFrame !== null) window.cancelAnimationFrame(pendingResizeFrame);
       markers = [];
       pathLayer?.clearLayers();
       pathLayer = null;
+      mapTiles = null;
       map?.remove();
       map = null;
     };
   });
 
+  function setFastMap(enabled: boolean): void {
+    fastMap = enabled;
+    if (mapTiles) {
+      // Keep detailed mode available with its original pan/zoom tile behavior.
+      mapTiles.options.keepBuffer = enabled ? 1 : 2;
+      mapTiles.options.updateWhenIdle = enabled;
+      mapTiles.options.updateWhenZooming = !enabled;
+    }
+    try { window.localStorage.setItem('wynobserve.contagion.fast-map.v1', String(enabled)); }
+    catch { /* Ephemeral mode when storage is unavailable. */ }
+  }
+
   function resetMap(): void {
-    map?.flyToBounds([[36.2, -90.0], [42.0, -77.1]], { padding: [24, 24], duration: 0.85 });
+    if (fastMap) map?.fitBounds([[36.2, -90.0], [42.0, -77.1]], { padding: [24, 24], animate: false });
+    else map?.flyToBounds([[36.2, -90.0], [42.0, -77.1]], { padding: [24, 24], duration: 0.85 });
   }
 </script>
 
-<div class="contagion-map" aria-label="Interactive regional map of Kentucky, Ohio and West Virginia">
+<div class="contagion-map" class:map-fast={fastMap} aria-label="Interactive regional map of Kentucky, Ohio and West Virginia">
   <div bind:this={mapHost} class="contagion-map-canvas"></div>
   <div class="map-screen-grid" aria-hidden="true"></div>
   <div class="map-sweep" class:map-sweep--active={scanEnabled} aria-hidden="true"></div>
@@ -211,6 +263,10 @@
         onclick={() => scanEnabled = !scanEnabled}
         title="Toggle decorative radar sweep"
       >◎ SWEEP {scanEnabled ? 'ON' : 'OFF'}</button>
+      <button class:map-toggle-active={fastMap} aria-pressed={fastMap}
+        onclick={() => setFastMap(!fastMap)}
+        title="Render without CSS tile filters for WebKit performance; turn off to restore the original high-detail map"
+      >⚡ FAST MAP {fastMap ? 'ON' : 'OFF'}</button>
       <button onclick={resetMap} class="map-reset">⤢ REGIONAL VIEW</button>
     </div>
     <span class="map-coordinate-label">POINTER // {pointerCoordinates}</span>
@@ -228,3 +284,7 @@
     {#if showIllustrativePaths}<span> · DEMO PATHS ARE NOT REAL NETWORK LINKS</span>{/if}
   </div>
 </div>
+
+<!-- WYNOBSERVE-UI-REPAIR-02 -->
+
+<!-- WYNOBSERVE-UI-REPAIR-03 -->

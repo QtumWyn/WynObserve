@@ -1,0 +1,24 @@
+/* WynObserve UI Repair 03 // WebKitGTK map painting optimizations.
+ * FAST MAP ON opts out of purely decorative paint/compositing effects.
+ * FAST MAP OFF restores earlier CSS; markers/tiles/interactions remain.
+ */
+.contagion-map.map-fast .map-screen-grid {
+  display: none;
+}
+.contagion-map.map-fast .map-marker-halo {
+  animation: none;
+  box-shadow: none;
+}
+.contagion-map.map-fast .map-marker-center,
+.contagion-map.map-fast .map-endpoint-dot {
+  box-shadow: none;
+}
+.contagion-map.map-fast .map-site-marker > strong,
+.contagion-map.map-fast .map-site-marker > small,
+.contagion-map.map-fast .map-endpoint-label {
+  text-shadow: none;
+}
+.contagion-map.map-fast .concept-connection--focused {
+  animation: none;
+  filter: none;
+}

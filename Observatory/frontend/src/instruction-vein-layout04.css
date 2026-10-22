@@ -1,0 +1,71 @@
+/* WynObserve // UI Repair 04 // viewport-independent Instruction Vein
+ *
+ * UI Repair 03 made the stacked inspector itself scrollable, but tied its
+ * max-height AND the Vein height to 100dvh / 55dvh. On small windows, this
+ * can leave almost no visible rows even after the inspector is scrolled.
+ *
+ * Keep a predictable, bounded list viewport regardless of window height.
+ * The instruction list itself still scrolls, and the outer page/inspector
+ * scrolls to reach that viewport when there isn't room for it on-screen.
+ *
+ * No Svelte scripts, data, buffer limits, or existing styles are replaced.
+ */
+
+/* In desktop layout the right inspector is a fixed-height grid panel.
+ * Make it the outer scroller and give the Vein its own fixed-height panel,
+ * rather than flex-shrinking the stream down to a row or two.
+ */
+@media (min-width: 1121px) {
+  .observatory-app .inspector.with-vein {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .observatory-app .inspector.with-vein .vein2 {
+    flex: 0 0 660px;
+    height: 660px;
+    min-height: 660px;
+    max-height: none;
+  }
+}
+
+/* Narrow layout already puts the inspector below the main page.
+ * Use the workspace's normal vertical scrolling for the entire inspector.
+ * Having another capped scroll area INSIDE it is what trapped the Vein.
+ */
+@media (max-width: 1120px) {
+  .observatory-app .workspace {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .observatory-app .inspector.with-vein {
+    display: flex;
+    flex-direction: column;
+    /* Explicit intrinsic sizing makes the grid's second row include the
+     * whole inspector rather than collapsing to the top-level heading. */
+    height: max-content;
+    max-height: none;
+    min-height: max-content;
+    overflow: visible;
+  }
+
+  .observatory-app .inspector.with-vein .vein2 {
+    flex: 0 0 660px;
+    height: 660px;
+    min-height: 660px;
+    max-height: none;
+    overflow: hidden;
+  }
+}
+
+/* Keep the scrollable instruction rows separate from the heading, controls,
+ * and caption. No height here depends on the Tauri window's dimensions.
+ */
+.observatory-app .inspector.with-vein .vein2-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}

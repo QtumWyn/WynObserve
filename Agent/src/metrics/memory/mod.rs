@@ -34,6 +34,8 @@ pub struct MemorySnapshot {
 
     pub memory_detail_available: bool,
     pub fault_rates_available: bool,
+    #[serde(default)]
+    pub major_fault_rate_available: bool,
 }
 
 impl MemorySnapshot {
@@ -96,6 +98,7 @@ mod tests {
             used_swap_bytes: 0,
             memory_detail_available: true,
             fault_rates_available: true,
+            major_fault_rate_available: true,
         };
 
         assert_eq!(snapshot.used_percent(), 25.0);
@@ -116,6 +119,7 @@ mod tests {
             used_swap_bytes: 0,
             memory_detail_available: true,
             fault_rates_available: true,
+            major_fault_rate_available: true,
         };
 
         assert_eq!(snapshot.used_percent(), 0.0);

@@ -8,6 +8,8 @@ pub fn to_wire(snapshot: &SystemSnapshot) -> wire::TelemetrySnapshot {
 
         captured_at_unix_ms: snapshot.captured_at_unix_ms,
 
+        motherboard: snapshot.motherboard.clone(),
+
         cpu: wire::CpuSnapshot {
             vendor: snapshot.cpu.vendor.clone(),
 
@@ -18,6 +20,8 @@ pub fn to_wire(snapshot: &SystemSnapshot) -> wire::TelemetrySnapshot {
             logical_cpu_count: snapshot.cpu.logical_cpu_count,
 
             physical_core_count: snapshot.cpu.physical_core_count,
+
+            temperature: snapshot.cpu.temperature.clone(),
 
             logical_cpus: snapshot
                 .cpu
@@ -56,9 +60,13 @@ pub fn to_wire(snapshot: &SystemSnapshot) -> wire::TelemetrySnapshot {
             memory_detail_available: snapshot.memory.memory_detail_available,
 
             fault_rates_available: snapshot.memory.fault_rates_available,
+            major_fault_rate_available: snapshot.memory.major_fault_rate_available,
         },
         npu: wire::NpuSnapshot {
             available: snapshot.npu.available,
+            utilization_available: snapshot.npu.utilization_available,
+            frequency_available: snapshot.npu.frequency_available,
+            memory_available: snapshot.npu.memory_available,
 
             model: snapshot.npu.model.clone(),
 
@@ -78,6 +86,8 @@ pub fn to_wire(snapshot: &SystemSnapshot) -> wire::TelemetrySnapshot {
             context_switches_per_second: snapshot.scheduler.context_switches_per_second,
 
             runnable_tasks: snapshot.scheduler.runnable_tasks,
+            runnable_tasks_available: snapshot.scheduler.runnable_tasks_available,
+            blocked_tasks_available: snapshot.scheduler.blocked_tasks_available,
 
             blocked_tasks: snapshot.scheduler.blocked_tasks,
 
@@ -85,6 +95,9 @@ pub fn to_wire(snapshot: &SystemSnapshot) -> wire::TelemetrySnapshot {
         },
         gpu: wire::GpuSnapshot {
             available: snapshot.gpu.available,
+
+            adapters: snapshot.gpu.adapters.clone(),
+            primary_adapter_id: snapshot.gpu.primary_adapter_id.clone(),
 
             model: snapshot.gpu.model.clone(),
 

@@ -15,6 +15,7 @@ pub(super) struct PlatformNpuCollector {
     previous_busy_us: Option<u64>,
     previous_sample_at: Option<Instant>,
     last_utilization_percent: f32,
+    utilization_available: bool,
 }
 
 impl PlatformNpuCollector {
@@ -24,6 +25,7 @@ impl PlatformNpuCollector {
             previous_busy_us: None,
             previous_sample_at: None,
             last_utilization_percent: 0.0,
+            utilization_available: false,
         }
     }
 
@@ -32,12 +34,11 @@ impl PlatformNpuCollector {
             return unavailable_snapshot();
         };
 
-        let current_frequency_mhz =
-            read_u64(&device_path.join("npu_current_frequency_mhz")).unwrap_or(0);
+        let current_frequency_mhz = read_u64(&device_path.join("npu_current_frequency_mhz"));
 
-        let max_frequency_mhz = read_u64(&device_path.join("npu_max_frequency_mhz")).unwrap_or(0);
+        let max_frequency_mhz = read_u64(&device_path.join("npu_max_frequency_mhz"));
 
-        let memory_used_bytes = read_u64(&device_path.join("npu_memory_utilization")).unwrap_or(0);
+        let memory_used_bytes = read_u64(&device_path.join("npu_memory_utilization"));
 
         let power_state =
             read_string(&device_path.join("power_state")).unwrap_or_else(|_| "unknown".to_string());
@@ -53,7 +54,12 @@ impl PlatformNpuCollector {
             match read_u64(&device_path.join("npu_busy_time_us")) {
                 Ok(busy_us) => self.update_utilization(busy_us, now),
 
-                Err(_) => self.last_utilization_percent,
+                Err(_) => {
+                    self.utilization_available = false;
+                    self.previous_busy_us = None;
+                    self.previous_sample_at = None;
+                    0.0
+                }
             }
         } else {
             self.last_utilization_percent
@@ -67,16 +73,19 @@ impl PlatformNpuCollector {
 
         NpuSnapshot {
             available: true,
+            utilization_available: self.utilization_available,
+            frequency_available: current_frequency_mhz.is_ok() && max_frequency_mhz.is_ok(),
+            memory_available: memory_used_bytes.is_ok(),
 
             model: "Intel NPU".to_string(),
             pci_address,
 
             utilization_percent,
 
-            current_frequency_mhz,
-            max_frequency_mhz,
+            current_frequency_mhz: current_frequency_mhz.unwrap_or(0),
+            max_frequency_mhz: max_frequency_mhz.unwrap_or(0),
 
-            memory_used_bytes,
+            memory_used_bytes: memory_used_bytes.unwrap_or(0),
 
             power_state,
         }
@@ -96,6 +105,7 @@ impl PlatformNpuCollector {
 
         let elapsed_us = elapsed.as_micros() as u64;
 
+        self.utilization_available = busy_us >= previous_busy_us && elapsed_us > 0;
         let busy_delta = busy_us.saturating_sub(previous_busy_us);
 
         let utilization = if elapsed_us == 0 {
@@ -172,6 +182,9 @@ fn read_string(path: &Path) -> io::Result<String> {
 fn unavailable_snapshot() -> NpuSnapshot {
     NpuSnapshot {
         available: false,
+        utilization_available: false,
+        frequency_available: false,
+        memory_available: false,
 
         model: "NPU unavailable".to_string(),
         pci_address: String::new(),

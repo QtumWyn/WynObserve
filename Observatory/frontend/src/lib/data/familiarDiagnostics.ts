@@ -1,3 +1,4 @@
+import { formatNumber } from './bridge';
 /**
  * Presentation-only reactions for Observatory familiars.
  * The active Svelte frontend supplies synthetic data. These conditions must
@@ -31,12 +32,12 @@ export function familiarSignals(
     bat: {
       active: thermal,
       message: 'Too warm! ♨',
-      detail: `CPU ${frame.cpu.temperatureC.toFixed(1)}°C · GPU ${frame.gpu.temperatureC.toFixed(1)}°C`,
+      detail: `CPU ${formatNumber(frame.cpu.temperatureC, 1)}°C · GPU ${formatNumber(frame.gpu.temperatureC, 1)}°C`,
     },
     bunny: {
       active: incidentActive || memoryPressure,
       message: incidentActive ? 'An incident? ♡' : 'So much memory…',
-      detail: incidentActive ? 'An incident has been flagged' : `Memory pressure: ${frame.memory.usedPercent.toFixed(1)}%`,
+      detail: incidentActive ? 'An incident has been flagged' : `Memory pressure: ${formatNumber(frame.memory.usedPercent, 1)}%`,
     },
     puppy: {
       active: offlineCount > 0,

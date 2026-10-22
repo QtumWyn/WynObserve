@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatNumber } from '../data/bridge';
   interface Props {
     title: string;
     subtitle: string;
@@ -29,8 +30,8 @@
     value,
     time: times[index] ?? 0,
   })));
-  let line = $derived(points.map((p, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' '));
-  let area = $derived(points.length ? `${line} L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z` : '');
+  let line = $derived(points.map((p, i) => !Number.isFinite(p.value) ? '' : `${i === 0 || !Number.isFinite(points[i-1].value) ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' '));
+  let area = $derived(points.length && points.every(p => Number.isFinite(p.value)) ? `${line} L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z` : '');
   let focusIndex = $derived(pinnedIndex ?? hoverIndex ?? Math.max(0, points.length - 1));
   let focused = $derived(points[focusIndex]);
 
@@ -46,7 +47,7 @@
 <article class="chart-panel" data-tint={tint}>
   <div class="chart-head">
     <div><div class="eyebrow">{subtitle}</div><h3>{title}</h3></div>
-    <div class="chart-value">{focused ? focused.value.toFixed(1) : '0.0'}<small>{unit}</small></div>
+    <div class="chart-value">{formatNumber(focused?.value)}<small>{unit}</small></div>
   </div>
   <div class="chart-plot" role="button" tabindex="0" aria-label={`Pin ${title} sample at cursor`}
     onclick={(event: MouseEvent) => {
@@ -62,7 +63,7 @@
       }
     }}>
     <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img"
-      aria-label={`${title}. Simulated time series, use pointer to inspect a synchronized sample.`}
+      aria-label={`${title}. Selected-source time series, use pointer to inspect a synchronized sample.`}
       onpointermove={(event: PointerEvent) => onHover(indexAt(event))}
       onpointerleave={() => onHover(null)}>
       <line x1="0" x2={width} y1="40" y2="40" class="chart-grid" />
@@ -70,12 +71,12 @@
       <line x1="0" x2={width} y1="122" y2="122" class="chart-grid" />
       <path d={area} class="chart-area" />
       <path d={line} class="chart-line" />
-      {#if (hoverIndex !== null || pinnedIndex !== null) && focused}
+      {#if (hoverIndex !== null || pinnedIndex !== null) && focused && Number.isFinite(focused.value)}
         <line x1={focused.x} x2={focused.x} y1="0" y2={height} class="chart-guide" />
         <circle cx={focused.x} cy={focused.y} r="4.3" class="chart-dot" />
       {/if}
     </svg>
-    {#if (hoverIndex !== null || pinnedIndex !== null) && focused}
+    {#if (hoverIndex !== null || pinnedIndex !== null) && focused && Number.isFinite(focused.value)}
       <div class="chart-cursor-readout">T+{focused.time.toFixed(2)}s · {focused.value.toFixed(2)} {unit} {pinnedIndex !== null ? '◈ PINNED' : '◇ HOVER'}</div>
     {/if}
   </div>

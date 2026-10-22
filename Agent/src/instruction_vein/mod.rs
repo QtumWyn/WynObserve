@@ -1,5 +1,7 @@
 mod disassembly;
 mod memory;
+#[cfg(test)]
+mod probe;
 mod process_sampler;
 mod sampler;
 mod tsc;

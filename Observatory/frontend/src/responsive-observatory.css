@@ -1,0 +1,201 @@
+/* WYNOBSERVE UI REPAIR 02
+ * Loaded after app.css. Layout-only overrides: no functionality is removed.
+ * At narrow widths, inspection moves below content instead of disappearing.
+ */
+html, body, #app { min-width: 0 !important; width: 100%; }
+body { overflow: hidden; }
+.observatory-app { min-width: 0; width: 100%; height: 100dvh; min-height: 0; }
+.observatory-app > *, .workspace > *, .content > * { min-width: 0; }
+.topbar { gap: clamp(6px, 1vw, 18px); padding-inline: clamp(8px, 1.4vw, 24px); }
+.brand-copy, .brand-title { min-width: 0; }
+.content { overflow-x: hidden; overscroll-behavior: contain; }
+.page-heading > div, .panel-heading > div { min-width: 0; }
+.page-heading, .panel-heading { flex-wrap: wrap; }
+.page-heading p, .fleet-banner p { overflow-wrap: anywhere; }
+.metric-card > strong { font-size: clamp(18px, 2vw, 28px); }
+.inspector-data strong { overflow-wrap: anywhere; }
+.settings-panel { max-height: calc(100dvh - 28px); overflow-y: auto; }
+.fleet-map-layout { min-width: 0; }
+.fleet-map-sites, .contagion-map { min-width: 0; }
+.nettrace, .nettrace-bottom, .nettrace-site-grid { min-width: 0; }
+.nettrace-field { min-width: 0; }
+
+/* Intermediate width: the original display:none hid real functionality. */
+@media (max-width: 1120px) {
+  .workspace {
+    grid-template-columns: 166px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: start;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .sidebar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: calc(100dvh - 153px);
+    min-height: 150px;
+    overflow-y: auto;
+  }
+  .content {
+    grid-column: 2;
+    grid-row: 1;
+    overflow: visible;
+    min-height: auto;
+    padding-bottom: 18px;
+  }
+  .inspector, .inspector.with-vein {
+    display: block;
+    grid-column: 2;
+    grid-row: 2;
+    overflow: visible;
+    min-height: 0;
+    padding: 19px;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .inspector.with-vein .vein2 { height: min(480px, 65dvh); min-height: 280px; }
+  .inspector.with-vein .vein2-stream { min-height: 0; }
+  .charts-grid { grid-template-columns: minmax(0, 1fr); }
+  .timeline { overflow-x: auto; }
+  .timeline > * { flex-shrink: 0; }
+  .timeline-spacer { flex-shrink: 1; }
+}
+
+/* Desktop panels naturally respond before they reach unusably narrow widths. */
+@media (max-width: 1020px) {
+  .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fleet-count-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .nettrace-site-grid:not(.single) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nettrace-bottom { grid-template-columns: minmax(0, 1fr); }
+  .nettrace-heading { flex-wrap: wrap; }
+}
+
+@media (max-width: 900px) {
+  /* Schematic node positions were hard-coded for a wide desktop canvas.
+     Reflow the SAME five interactive buttons into two columns. */
+  .machine-v2.schematic {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: 12px;
+    height: auto;
+    min-height: 590px;
+    padding: 192px 12px 48px;
+  }
+  .observatory-app .machine-v2 .machine-v2-node,
+  .observatory-app .machine-v2 .machine-v2-node[data-kind] {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 100px;
+    max-width: none;
+    justify-self: stretch;
+  }
+  .machine-v2 .machine-v2-node[data-kind='CPU'] { grid-column: 1 / -1; min-height: 120px; }
+  .machine-v2 .schematic-wires { opacity: .14; }
+  .machine-v2 .machine-v2-modes {
+    top: 105px;
+    left: 12px;
+    right: 12px;
+    transform: none;
+    justify-content: center;
+    flex-wrap: wrap;
+    max-width: none;
+  }
+  .machine-v2 .machine-v2-focus { max-width: 65%; }
+  .machine-v2 .schematic-key { max-width: 54%; }
+}
+
+@media (max-width: 800px) {
+  .workspace { grid-template-columns: clamp(118px, 22vw, 155px) minmax(0,1fr); }
+  .sidebar { padding: 12px 6px; }
+  /* A column of indistinguishable ◆ glyphs is not usable navigation. */
+  .sidebar .sidebar-top { display: flex; margin: 0 3px 12px; }
+  .sidebar .nav-group { margin-bottom: 13px; }
+  .sidebar .nav-group h2 { display: block; font-size: 9px; margin: 0 4px 5px; }
+  .sidebar .nav-group button {
+    font-size: 9px;
+    justify-content: flex-start;
+    line-height: 1.4;
+    text-align: left;
+    padding: 8px 4px;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .sidebar .nav-glyph { font-size: 11px; flex: 0 0 15px; width: 15px; }
+  .content { padding: 15px 11px 15px; }
+  .page-heading { align-items: flex-start; }
+  .fleet-map-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(390px, 56dvh);
+    height: auto;
+    min-height: 0;
+  }
+  .fleet-map-sites {
+    min-height: 0;
+    max-height: 210px;
+    overflow-y: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .contagion-map { height: 100%; min-height: 0; }
+  .fleet-view-switch { flex-wrap: wrap; max-width: 100%; }
+  .fleet-count-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nettrace-site-grid:not(.single) { grid-template-columns: minmax(0,1fr); }
+  .nettrace-stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .nettrace-caution { flex-wrap: wrap; }
+  .nettrace-field { height: 300px; }
+  .topbar { flex-wrap: wrap; align-content: center; }
+  .topbar .brand-subtitle { display: none; }
+  .observatory-app { grid-template-rows: minmax(72px, auto) minmax(0,1fr) 54px 27px; }
+  .sidebar { height: calc(100dvh - 153px); }
+  .topbar .demo-chip, .topbar .status-chip:not(.demo-chip) { display: inline-flex; align-items: center; }
+  .topbar .target-label { display: inline-flex; }
+  .topbar .chrome-button { padding: 8px; }
+  .settings-panel { top: 12px; right: 12px; width: calc(100vw - 24px); }
+  .process-row, .process-header { min-width: 420px; }
+  .process-panel { overflow-x: auto; }
+}
+
+@media (max-width: 570px) {
+  .observatory-app { grid-template-rows: minmax(64px, auto) minmax(0,1fr) 54px 27px; }
+  .topbar { padding: 8px; }
+  .topbar .brand-title { font-size: 15px; }
+  .topbar .brand-mark { width: 30px; height: 30px; font-size: 18px; }
+  .topbar-spacer { flex: 1 1 8px; }
+  .topbar .status-chip { display: inline-flex; }
+  .workspace { grid-template-columns: 111px minmax(0,1fr); }
+  .sidebar { height: calc(100dvh - 145px); }
+  .sidebar .nav-group button { font-size: 8px; }
+  .sidebar .nav-group h2 { font-size: 8px; }
+  .summary-grid, .fleet-count-row, .nettrace-stats { grid-template-columns: minmax(0, 1fr); }
+  .metric-card > strong { font-size: 22px; }
+  .machine-v2.schematic { grid-template-columns: minmax(0,1fr); padding-top: 185px; }
+  .machine-v2 .machine-v2-node[data-kind='CPU'] { grid-column: 1; }
+  .machine-v2 .machine-v2-focus { max-width: 48%; }
+  .machine-v2 .schematic-key { max-width: 48%; }
+  .fleet-filter-row { flex-wrap: wrap; }
+  .fleet-filter-row input, .fleet-filter-row select { width: 100%; max-width: none; }
+  .fleet-map-layout { grid-template-rows: auto minmax(530px, 75dvh); }
+  .contagion-map .map-corner.top-left { top: 10px; left: 10px; }
+  .contagion-map .map-corner.top-right { top: 90px; left: 10px; right: 10px; }
+  .contagion-map .map-corner strong { font-size: 18px; }
+  .contagion-map .map-map-legend { gap: 5px; }
+  .nettrace-log { overflow-x: auto; }
+  .nettrace-log-head, .nettrace-event { min-width: 340px; }
+  .version-footer { gap: 3px; font-size: 8px; }
+  .version-footer small { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .machine-v2 .machine-v2-route { transition: none; }
+}

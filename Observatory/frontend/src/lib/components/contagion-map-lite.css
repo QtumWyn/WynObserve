@@ -1,0 +1,17 @@
+/* WYNOBSERVE UI REPAIR 02
+ * FAST MAP now means genuinely FILTER-FREE tiles. The previous optimization
+ * still filtered the entire moving Leaflet tile pane: expensive on WebKitGTK.
+ * Turn FAST MAP OFF to restore exactly the previous map color-grade CSS.
+ * Site selection, real geographic tiles, zooming, endpoints and HUD unchanged.
+ */
+.contagion-map.map-fast .leaflet-tile-pane,
+.contagion-map.map-fast .leaflet-tile { filter: none !important; }
+/* Cheap flat tint instead of a backdrop/filter on moving raster tiles. */
+.contagion-map.map-fast .map-screen-grid { background-color: rgba(5, 10, 22, .21); }
+/* Avoid animating every raster tile during zoom or loading. */
+.contagion-map.map-fast .leaflet-tile { transition: none !important; }
+/* Keep hover and marker interactions. Rendering-only reduction. */
+.contagion-map.map-fast .map-marker-halo { box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  .contagion-map .map-sweep--active { animation: none; opacity: 0; }
+}

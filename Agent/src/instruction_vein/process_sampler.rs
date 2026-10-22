@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs, io,
+    io,
 };
 
 use super::{InstructionSample, InstructionSampler};
@@ -11,12 +11,13 @@ pub struct ProcessInstructionSampler {
     samplers: HashMap<u32, InstructionSampler>,
 }
 
+#[cfg(target_os = "linux")]
 fn read_tids(pid: u32) -> io::Result<HashSet<u32>> {
     let path = format!("/proc/{pid}/task");
 
     let mut tids = HashSet::new();
 
-    for entry in fs::read_dir(path)? {
+    for entry in std::fs::read_dir(path)? {
         let entry = entry?;
 
         let name = entry.file_name();
@@ -35,6 +36,11 @@ fn read_tids(pid: u32) -> io::Result<HashSet<u32>> {
     Ok(tids)
 }
 
+#[cfg(target_os = "windows")]
+fn read_tids(pid: u32) -> io::Result<HashSet<u32>> {
+    crate::windows::threads(pid)
+}
+
 impl ProcessInstructionSampler {
     pub fn start(pid: u32) -> Result<Self, String> {
         let tids = read_tids(pid).map_err(|error| {
@@ -49,6 +55,7 @@ impl ProcessInstructionSampler {
         }
 
         let mut samplers = HashMap::new();
+        let mut first_error = None;
 
         for tid in tids {
             match InstructionSampler::start_for_tid(tid) {
@@ -57,6 +64,7 @@ impl ProcessInstructionSampler {
                 }
 
                 Err(error) => {
+                    first_error.get_or_insert_with(|| error.clone());
                     eprintln!(
                         "Instruction Vein // \
                          unable to sample TID {tid} \
@@ -68,8 +76,8 @@ impl ProcessInstructionSampler {
 
         if samplers.is_empty() {
             return Err(format!(
-                "could not open any perf events \
-                     for PID {pid}"
+                "could not open instruction sampling for PID {pid}: {}",
+                first_error.unwrap_or_default()
             ));
         }
 
@@ -110,6 +118,7 @@ impl ProcessInstructionSampler {
         self.sync_threads()?;
 
         let mut samples = Vec::new();
+        let mut poll_error = None;
 
         for sampler in self.samplers.values_mut() {
             match sampler.poll() {
@@ -124,7 +133,13 @@ impl ProcessInstructionSampler {
                         sampler.tid(),
                         error,
                     );
+                    poll_error = Some(error);
                 }
+            }
+        }
+        if samples.is_empty() {
+            if let Some(error) = poll_error {
+                return Err(error);
             }
         }
 
@@ -174,7 +189,7 @@ mod tests {
     };
 
     #[test]
-    #[ignore = "requires Linux perf_event permissions or CAP_PERFMON"]
+    #[ignore = "requires Linux CAP_PERFMON/perf permissions or elevated Windows ETW profile access"]
     fn samples_whole_process() {
         let running = Arc::new(AtomicBool::new(true));
 

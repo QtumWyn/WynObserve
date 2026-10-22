@@ -130,6 +130,7 @@
     </button>
   </div>
 
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard-scrollable instruction region) -->
   <div class="vein2-stream" bind:this={streamElement} onscroll={onScroll} role="region" aria-label="Instruction samples" aria-live="off" tabindex="0">
     {#if displayed.length === 0}
       <div class="vein2-empty">No samples in this channel yet.</div>

@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
 use crate::cpu_identity::CpuIdentity;
+use wyn_protocol::CpuTemperatureSnapshot;
+
+mod temperature;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogicalCpuSnapshot {
@@ -18,6 +21,7 @@ pub struct CpuSnapshot {
     pub global_usage_percent: f32,
     pub logical_cpu_count: usize,
     pub physical_core_count: Option<usize>,
+    pub temperature: Option<CpuTemperatureSnapshot>,
     pub logical_cpus: Vec<LogicalCpuSnapshot>,
 }
 
@@ -40,6 +44,7 @@ pub fn collect_cpu(system: &System, identity: &CpuIdentity) -> CpuSnapshot {
         global_usage_percent: system.global_cpu_usage(),
         logical_cpu_count: logical_cpus.len(),
         physical_core_count: System::physical_core_count(),
+        temperature: temperature::sample(),
         logical_cpus,
     }
 }

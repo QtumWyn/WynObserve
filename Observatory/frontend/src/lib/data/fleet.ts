@@ -3,7 +3,7 @@
  * Never derive endpoint locations from IP addresses or assume all machines have GPS coordinates.
  */
 export type FleetStatus = 'online' | 'warning' | 'offline';
-export type SiteId = 'river' | 'aa' | 'hurricane';
+export type SiteId = 'river' | 'aa' | 'hurricane' | 'unassigned';
 
 export interface FleetDevice {
   id: string;

@@ -1,0 +1,77 @@
+/* WynObserve UI Repair 03 // stacked inspector + Instruction Vein scrolling
+ * Additive overrides. The original sizing/layout remains intact at other breakpoints.
+ * The inspector scrolls as a whole when needed; Instruction Vein has its own
+ * scrollable viewport for its intentionally compact <=100 visible rows.
+ */
+.workspace,
+.inspector,
+.inspector.with-vein,
+.vein2,
+.vein2-stream { min-width: 0; }
+
+/* At desktop widths, previous .inspector.with-vein { overflow:hidden } could
+ * trap the Vein below the viewport when inspector metadata grew taller.
+ * Allow the sidebar to scroll, while keeping the Vein's internal row scroller.
+ */
+@media (min-width: 1121px) {
+  .observatory-app .inspector.with-vein {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) var(--deep);
+  }
+  .observatory-app .inspector.with-vein .vein2 {
+    flex: 1 0 285px;
+    min-height: 285px;
+  }
+}
+
+/* Below 1120px, UI Repair 02 stacks the inspector in a second grid row.
+ * Give that inspector its own bounded scroll area, so the Vein can always
+ * be reached without resizing the whole desktop window.
+ */
+@media (max-width: 1120px) {
+  .observatory-app .workspace {
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+  .observatory-app .inspector,
+  .observatory-app .inspector.with-vein {
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    min-height: 0;
+    max-height: min(760px, max(310px, calc(100dvh - 175px)));
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) var(--deep);
+  }
+  .observatory-app .inspector.with-vein .vein2 {
+    flex: 0 0 auto;
+    height: clamp(285px, 55dvh, 480px);
+    min-height: 285px;
+    overflow: hidden;
+  }
+}
+
+/* The rows use their own scrollbar, not the whole app's scroll position.
+ * When a wheel scroll reaches an edge, the inspector remains accessible.
+ */
+.observatory-app .inspector.with-vein .vein2-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--secondary) var(--deep);
+}
+
+/* Avoid clipping extremely long endpoint metadata inside a narrow inspector. */
+.observatory-app .inspector-heading,
+.observatory-app .inspector-data,
+.observatory-app .inspector-provenance { min-width: 0; }
+.observatory-app .inspector-heading h2,
+.observatory-app .inspector-data small { overflow-wrap: anywhere; }

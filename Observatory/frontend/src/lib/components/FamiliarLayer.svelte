@@ -25,7 +25,7 @@
     /** When available, use the original Observatory preferences without modifying them. */
     preferences?: FamiliarVisibility;
     devices: ReadonlyArray<FleetDevice>;
-    /** Explicit provenance. 'demo' is the ONLY source used by this migration. */
+    /** Explicit provenance controls simulation-only interactions. */
     source?: 'demo' | 'observed';
     /** Leave false until connected to a real incident signal. */
     incidentActive?: boolean;
@@ -97,6 +97,7 @@
     catgirl: true, batgirl: true, bunnygirl: false, puppygirl: false,
   });
   let preferences = $derived(suppliedPreferences ?? localVisibility);
+  let refreshMotionLoop: (() => void) | null = null;
 
   function setEnabled(kind: FamiliarKind, enabledValue: boolean): void {
     if (suppliedPreferences) return;
@@ -106,7 +107,17 @@
     } catch {
       // Storage may be disabled; keep working with this session's settings.
     }
+    // If the last familiar was disabled, cancel the pending animation frame.
+    // Re-enabling one starts the loop immediately.
+    refreshMotionLoop?.();
   }
+
+  // Also honor changes from the optional shared settings migration.
+  $effect((): void => {
+    void preferences.catgirl; void preferences.batgirl;
+    void preferences.bunnygirl; void preferences.puppygirl;
+    refreshMotionLoop?.();
+  });
 
   type DemoReaction = FamiliarKind | 'auto';
   const demoChoices: DemoReaction[] = ['auto', ...kinds];
@@ -242,6 +253,8 @@
     let raf: number = 0;
     let visible: boolean = document.visibilityState === 'visible';
     let last: number = performance.now();
+    let lastRendered: number = 0;
+    const hasVisibleFamiliar = (): boolean => kinds.some((kind: FamiliarKind) => enabled(kind));
     const start: number = performance.now();
     const media: MediaQueryList = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -281,6 +294,13 @@
     main.addEventListener('pointerleave', leavePointer);
 
     const tick = (now: number): void => {
+      // Cap reactive sprite movement at 40Hz even on a 200Hz display.
+      // The visual movements still interpolate using elapsed time.
+      if (!reducedMotion && now - lastRendered < 25) {
+        if (visible && hasVisibleFamiliar()) raf = window.requestAnimationFrame(tick);
+        return;
+      }
+      lastRendered = now;
       const dt: number = Math.min(Math.max((now - last) / 1000, 0), 0.05);
       last = now;
       const t: number = (now - start) / 1000;
@@ -351,16 +371,17 @@
           : sleeping ? 'sleeping' : chasing ? 'playing' : 'idle';
       }
       ready = true;
-      if (visible && !reducedMotion) raf = window.requestAnimationFrame(tick);
+      if (visible && !reducedMotion && hasVisibleFamiliar()) raf = window.requestAnimationFrame(tick);
     };
 
     const startTicking = (): void => {
       window.cancelAnimationFrame(raf);
       last = performance.now();
       ready = true;
-      if (visible && !reducedMotion) raf = window.requestAnimationFrame(tick);
-      else tick(last);
+      if (visible && !reducedMotion && hasVisibleFamiliar()) raf = window.requestAnimationFrame(tick);
+      else if (reducedMotion) tick(last);
     };
+    refreshMotionLoop = startTicking;
     const updateVisibility = (): void => {
       visible = document.visibilityState === 'visible';
       startTicking();
@@ -371,6 +392,7 @@
     startTicking();
 
     return (): void => {
+      refreshMotionLoop = null;
       window.cancelAnimationFrame(raf);
       resize.disconnect();
       media.removeEventListener('change', updateMotionPreference);
@@ -437,8 +459,9 @@
         class:is-alert={signals[kind].active && spriteMood(kind) !== 'happy'}
         class:is-playing={spriteMood(kind) === 'playing'}
         class:is-hovered={motions[kind].hovered}
-        style:left={`${motions[kind].x}px`}
-        style:top={`${motions[kind].y}px`}
+        style:left="0px"
+        style:top="0px"
+        style:transform={`translate3d(${motions[kind].x}px, ${motions[kind].y}px, 0) translate(-50%, -50%)`}
         aria-label={spriteLabel(kind)}
         title={spriteLabel(kind)}
         onclick={() => feed(kind)}

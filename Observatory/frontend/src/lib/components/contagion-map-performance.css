@@ -1,0 +1,11 @@
+/* WynObserve performance option // Contagion Map
+ * Fast mode removes the redundant PER-TILE filter, leaving a single
+ * color grade at the pane level. Original double-filter styling is
+ * fully restored by the FAST MAP OFF toggle.
+ */
+.contagion-map.map-fast .leaflet-tile {
+  filter: none !important;
+}
+.contagion-map.map-fast .leaflet-tile-pane {
+  filter: brightness(.47) contrast(1.22) saturate(.38) hue-rotate(194deg);
+}

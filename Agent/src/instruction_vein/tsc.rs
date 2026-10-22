@@ -12,6 +12,9 @@ mod tests {
 
     #[test]
     fn tsc_advances() {
+        if !crate::cpu_identity::supports_rdtscp() {
+            return;
+        }
         let first = read();
         let second = read();
 

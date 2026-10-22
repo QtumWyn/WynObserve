@@ -8,14 +8,9 @@ use sysinfo::{CpuRefreshKind, System};
 use crate::{
     cpu_identity::{CpuIdentity, read_cpu_identity},
     metrics::{
-        cpu::collect_cpu,
-        gpu::GpuCollector,
-        memory::{MemoryCollector, MemorySnapshot},
-        network::{NetworkCollector, NetworkSnapshot},
-        npu::{NpuCollector, NpuSnapshot},
-        processes::{ProcessCollector, ProcessSnapshot},
-        scheduler::{SchedulerCollector, SchedulerSnapshot},
-        storage::{StorageCollector, StorageSnapshot},
+        cpu::collect_cpu, gpu::GpuCollector, memory::MemoryCollector, network::NetworkCollector,
+        npu::NpuCollector, processes::ProcessCollector, scheduler::SchedulerCollector,
+        storage::StorageCollector,
     },
     snapshot::SystemSnapshot,
 };
@@ -30,6 +25,7 @@ fn unix_timestamp_ms() -> u64 {
 pub struct TelemetryCollector {
     system: System,
     cpu_identity: CpuIdentity,
+    motherboard: Option<wyn_protocol::MotherboardSnapshot>,
     memory: MemoryCollector,
     npu: NpuCollector,
     scheduler: SchedulerCollector,
@@ -72,6 +68,7 @@ impl TelemetryCollector {
         Self {
             system,
             cpu_identity,
+            motherboard: crate::motherboard::collect(),
             memory,
             npu,
             scheduler,
@@ -91,18 +88,29 @@ impl TelemetryCollector {
         let network = self.network.sample();
         let process_sample = self.processes.sample();
 
+        let gpu = self.gpu.sample();
+        let cpu = collect_cpu(&self.system, &self.cpu_identity);
+        #[cfg(windows)]
+        let cpu = {
+            let mut cpu = cpu;
+            if cpu.vendor == "AuthenticAMD" {
+                cpu.temperature = self.gpu.cpu_temperature.clone();
+            }
+            cpu
+        };
         SystemSnapshot {
             schema_version: 1,
             captured_at_unix_ms: unix_timestamp_ms(),
 
-            cpu: collect_cpu(&self.system, &self.cpu_identity),
+            motherboard: self.motherboard.clone(),
+            cpu,
 
             memory: self.memory.sample(&self.system),
 
             npu: self.npu.sample(),
 
             scheduler,
-            gpu: self.gpu.sample(),
+            gpu,
             storage,
             network,
             processes_available: process_sample.available,

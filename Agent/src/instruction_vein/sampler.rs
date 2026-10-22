@@ -134,7 +134,7 @@ impl From<InstructionSample> for wyn_protocol::instruction_vein::InstructionVein
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};

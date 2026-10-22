@@ -82,3 +82,22 @@ pub fn supports_rdtscp() -> bool {
 
     features.edx & (1 << 27) != 0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn assembly_matches_compiler_cpuid_intrinsic() {
+        for (leaf, subleaf) in [(0, 0), (1, 0), (7, 0), (0x8000_0000, 0)] {
+            let actual = cpuid(leaf, subleaf);
+            let expected = std::arch::x86_64::__cpuid_count(leaf, subleaf);
+            // Leaf 1 EBX includes a CPU APIC ID; a task can migrate between calls.
+            assert_eq!(actual.eax, expected.eax);
+            if leaf != 1 {
+                assert_eq!(actual.ebx, expected.ebx);
+            }
+            assert_eq!(actual.ecx, expected.ecx);
+            assert_eq!(actual.edx, expected.edx);
+        }
+    }
+}

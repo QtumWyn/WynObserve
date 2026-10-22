@@ -98,6 +98,7 @@ impl PlatformMemoryCollector {
             used_swap_bytes: system.used_swap(),
             memory_detail_available,
             fault_rates_available,
+            major_fault_rate_available: fault_rates_available,
         }
     }
 }

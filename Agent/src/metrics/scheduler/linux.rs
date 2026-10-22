@@ -107,6 +107,7 @@ impl PlatformSchedulerCollector {
             .map(|stat| stat.blocked_tasks)
             .unwrap_or(0);
 
+        let counts_available = proc_stat.is_some();
         if let Some(stat) = proc_stat {
             self.previous_context_switches = Some(stat.context_switches);
 
@@ -116,6 +117,8 @@ impl PlatformSchedulerCollector {
         SchedulerSnapshot {
             context_switches_per_second,
             runnable_tasks,
+            runnable_tasks_available: counts_available,
+            blocked_tasks_available: counts_available,
             blocked_tasks,
             context_switch_rate_available,
         }
